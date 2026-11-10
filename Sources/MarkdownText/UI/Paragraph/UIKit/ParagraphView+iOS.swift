@@ -66,7 +66,9 @@ struct ParagraphView: UIViewRepresentable {
   }
 
   static func dismantleUIView(_ view: ParagraphUIView, coordinator: Coordinator) {
-    view.onSelectionActivity?(view.selectionActivityID, false)
+    let handler = view.onSelectionActivity
+    let id = view.selectionActivityID
+    Task { @MainActor in handler?(id, false) }
     view.onSelectionActivity = nil
     view.setMarkdownController(nil)
     view.setTextContextMenu(nil)

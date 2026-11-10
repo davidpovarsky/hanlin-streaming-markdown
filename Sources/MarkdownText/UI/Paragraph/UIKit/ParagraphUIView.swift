@@ -23,16 +23,11 @@ class ParagraphUIView: UITextView {
   let selectionActivityID = UUID()
   var onSelectionActivity: (@MainActor @Sendable (UUID, Bool) -> Void)?
   var sourceBlockID: String?
+  private var isApplyingContents = false
 
   override func becomeFirstResponder() -> Bool {
     let accepted = super.becomeFirstResponder()
     if accepted { onSelectionActivity?(selectionActivityID, selectedRange.length > 0) }
-    return accepted
-  }
-
-  override func resignFirstResponder() -> Bool {
-    let accepted = super.resignFirstResponder()
-    if accepted { onSelectionActivity?(selectionActivityID, false) }
     return accepted
   }
 
@@ -80,6 +75,7 @@ class ParagraphUIView: UITextView {
     let result = super.resignFirstResponder()
     if result {
       selectedTextRange = nil
+      reportSelectionActivity(deferred: true)
     }
     return result
   }
@@ -143,6 +139,7 @@ class ParagraphUIView: UITextView {
     // Stop display link update before updating the attributed string
     tearDownDisplayLink()
     invalidateCachedSize()
+    isApplyingContents = true
     attributedText = finalString
     // Appending a stream must not dismiss or move an existing native selection.
     // If a speculative rewrite changes that prefix, UIKit establishes a new selection.
@@ -155,6 +152,8 @@ class ParagraphUIView: UITextView {
       selectedRange = previousSelection
     }
 
+    isApplyingContents = false
+    reportSelectionActivity(deferred: true)
     configureAccessibility(for: finalString)
 
     invalidateIntrinsicContentSize()
@@ -370,17 +369,27 @@ class ParagraphUIView: UITextView {
 
 // MARK: - UITextViewDelegate
 extension ParagraphUIView: UITextViewDelegate {
+  fileprivate func reportSelectionActivity(deferred: Bool = false) {
+    guard !isApplyingContents else { return }
+    if deferred {
+      // UIViewRepresentable content/removal updates must not synchronously
+      // mutate the enclosing SwiftUI chat's state. Read the latest selection.
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        self.onSelectionActivity?(self.selectionActivityID, self.isFirstResponder && self.selectedRange.length > 0)
+      }
+    } else {
+      onSelectionActivity?(selectionActivityID, isFirstResponder && selectedRange.length > 0)
+    }
+  }
+
   func textViewDidChangeSelection(_ textView: UITextView) {
-    onSelectionActivity?(selectionActivityID, textView.isFirstResponder && textView.selectedRange.length > 0)
+    reportSelectionActivity(deferred: !(textView.isFirstResponder && textView.selectedRange.length > 0))
   }
 
-  func textViewDidBeginEditing(_ textView: UITextView) {
-    textViewDidChangeSelection(textView)
-  }
+  func textViewDidBeginEditing(_ textView: UITextView) { textViewDidChangeSelection(textView) }
 
-  func textViewDidEndEditing(_ textView: UITextView) {
-    onSelectionActivity?(selectionActivityID, false)
-  }
+  func textViewDidEndEditing(_ textView: UITextView) { reportSelectionActivity(deferred: true) }
 
   func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
     self.onUrlTap(URL)
