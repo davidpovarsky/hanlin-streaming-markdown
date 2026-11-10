@@ -11,6 +11,7 @@ public protocol MarkdownListener {
   func onTableDownloadTap(content: String) async
   func onContextMenuAppear(id: String, selectedContent: String) async
   func onContextMenuTap(id: String, selectedContent: String) async
+  func onTextSelectionAction(id: String, selection: MarkdownTextSelection) async
   func onImageTap(image: MarkdownImage) async
 
   /// Resolves a bundled-resource image that the app's main bundle does not
@@ -26,6 +27,9 @@ public protocol MarkdownListener {
 }
 
 public extension MarkdownListener {
+  func onTextSelectionAction(id: String, selection: MarkdownTextSelection) async {
+    await onContextMenuTap(id: id, selectedContent: selection.text)
+  }
   func resolveBundledResource(fileName: String, ext: String?) -> URL? { nil }
 }
 
@@ -100,6 +104,10 @@ public final class MarkdownController: ObservableObject {
     Task {
       await listener?.onContextMenuTap(id: id, selectedContent: selectedContent)
     }
+  }
+
+  func onTextSelectionAction(id: String, selection: MarkdownTextSelection) {
+    Task { await listener?.onTextSelectionAction(id: id, selection: selection) }
   }
 
   func onImageTap(image: MarkdownImage) {

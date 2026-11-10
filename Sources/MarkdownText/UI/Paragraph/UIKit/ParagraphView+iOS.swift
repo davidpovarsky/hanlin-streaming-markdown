@@ -11,6 +11,21 @@ struct ParagraphView: UIViewRepresentable {
   @Environment(\.markdownConfig) var config: MarkdownRenderConfig
   @Environment(\.markdownController) var markdownController: MarkdownController?
 
+  @Environment(\.markdownSelectionBlockID) var sourceBlockID
+  @Environment(\.markdownSelectionHighlight) var highlight
+
+  private var displayedContents: NSMutableAttributedString {
+    let result = NSMutableAttributedString(attributedString: contents)
+    if let highlight, highlight.sourceBlockID == sourceBlockID,
+       highlight.renderedText == contents.string, highlight.range.location != NSNotFound,
+       highlight.range.location >= 0, highlight.range.length > 0,
+       highlight.range.location <= contents.length,
+       highlight.range.length <= contents.length - highlight.range.location {
+      result.addAttribute(.backgroundColor, value: UIColor.systemYellow.withAlphaComponent(0.3), range: highlight.range)
+    }
+    return result
+  }
+
   var contents: NSMutableAttributedString
   var lineSpacing: CGFloat?
 
@@ -22,9 +37,10 @@ struct ParagraphView: UIViewRepresentable {
     let openUrlFunction = openURL.callAsFunction(_:)
     let view = ParagraphViewCache.shared.createOrReuseView(contents: contents, lineSpacing: lineSpacing)
     view.onUrlTap = openUrlFunction
-    view.setParagraphContents(contents, lineSpacing: lineSpacing, animatedByWord: false)
+    view.setParagraphContents(displayedContents, lineSpacing: lineSpacing, animatedByWord: false)
     view.setTextContextMenu(config.resolvedTextContextMenu)
     view.setMarkdownController(markdownController)
+    view.sourceBlockID = sourceBlockID
 
     if config.shouldAnimateText {
       view.alpha = 0
@@ -37,12 +53,13 @@ struct ParagraphView: UIViewRepresentable {
   }
 
   func updateUIView(_ view: ParagraphUIView, context: Context) {
-    if view.paragraphContents != contents || view.lineSpacing != lineSpacing {
+    if view.paragraphContents != displayedContents || view.lineSpacing != lineSpacing {
       let shouldAnimate = view.window != nil && config.shouldAnimateText // only animate when visible
-      view.setParagraphContents(contents, lineSpacing: lineSpacing, animatedByWord: shouldAnimate)
+      view.setParagraphContents(displayedContents, lineSpacing: lineSpacing, animatedByWord: shouldAnimate)
     }
     view.setTextContextMenu(config.resolvedTextContextMenu)
     view.setMarkdownController(markdownController)
+    view.sourceBlockID = sourceBlockID
   }
 
   // If we don't implement this function, the snapshot tests will fail with incorrect sizing.

@@ -73,5 +73,6 @@ struct SingleBlockView: View {
           .id(id)
       }
     }
+    .environment(\.markdownSelectionBlockID, renderable.id)
   }
 }

@@ -20,6 +20,8 @@ private struct CachedParagraphUIViewSize {
 }
 
 class ParagraphUIView: UITextView {
+  var sourceBlockID: String?
+
   private static let jsonEncoder = JSONEncoder()
   static let animationDuration: CFTimeInterval = ParagraphAnimationConstants.fadeInDuration
 
@@ -111,6 +113,8 @@ class ParagraphUIView: UITextView {
     self.lineSpacing = lineSpacing
 
     let oldAttributedString: NSAttributedString = attributedText
+    let previousSelection = selectedRange
+    let wasSelecting = isFirstResponder && previousSelection.length > 0
     let finalString: NSMutableAttributedString
     if lineSpacing != nil {
       finalString = applyLineSpacing(to: newContents, lineSpacing: lineSpacing)
@@ -126,6 +130,16 @@ class ParagraphUIView: UITextView {
     tearDownDisplayLink()
     invalidateCachedSize()
     attributedText = finalString
+    // Appending a stream must not dismiss or move an existing native selection.
+    // If a speculative rewrite changes that prefix, UIKit establishes a new selection.
+    if wasSelecting,
+       previousSelection.location != NSNotFound,
+       NSMaxRange(previousSelection) <= finalString.length,
+       NSMaxRange(previousSelection) <= oldAttributedString.length,
+       (finalString.string as NSString).substring(to: NSMaxRange(previousSelection)) ==
+         (oldAttributedString.string as NSString).substring(to: NSMaxRange(previousSelection)) {
+      selectedRange = previousSelection
+    }
 
     configureAccessibility(for: finalString)
 
@@ -178,7 +192,8 @@ class ParagraphUIView: UITextView {
     isEditable = false
     isSelectable = true
     isScrollEnabled = false
-    textAlignment = .left
+    textAlignment = .natural
+    adjustsFontForContentSizeCategory = true
     backgroundColor = .clear
     if #available(iOS 18.0, *) {
       writingToolsBehavior = .none
@@ -383,7 +398,7 @@ fileprivate extension NSMutableAttributedString {
   func setLineSpacing(_ lineSpacing: CGFloat) {
     let paragraphStyle = NSMutableParagraphStyle()
     paragraphStyle.lineSpacing = lineSpacing
-    paragraphStyle.alignment = .left
+    paragraphStyle.alignment = .natural
     addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: length))
   }
 }
