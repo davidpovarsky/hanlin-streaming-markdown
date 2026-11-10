@@ -7,6 +7,7 @@
 import SwiftUI
 
 struct ParagraphView: UIViewRepresentable {
+  @Environment(\.markdownSelectionActivity) var selectionActivity
   @Environment(\.openURL) var openURL
   @Environment(\.markdownConfig) var config: MarkdownRenderConfig
   @Environment(\.markdownController) var markdownController: MarkdownController?
@@ -41,6 +42,7 @@ struct ParagraphView: UIViewRepresentable {
     view.setTextContextMenu(config.resolvedTextContextMenu)
     view.setMarkdownController(markdownController)
     view.sourceBlockID = sourceBlockID
+    view.onSelectionActivity = selectionActivity
 
     if config.shouldAnimateText {
       view.alpha = 0
@@ -60,6 +62,15 @@ struct ParagraphView: UIViewRepresentable {
     view.setTextContextMenu(config.resolvedTextContextMenu)
     view.setMarkdownController(markdownController)
     view.sourceBlockID = sourceBlockID
+    view.onSelectionActivity = selectionActivity
+  }
+
+  static func dismantleUIView(_ view: ParagraphUIView, coordinator: Coordinator) {
+    view.onSelectionActivity?(view.selectionActivityID, false)
+    view.onSelectionActivity = nil
+    view.setMarkdownController(nil)
+    view.setTextContextMenu(nil)
+    view.onUrlTap = { _ in }
   }
 
   // If we don't implement this function, the snapshot tests will fail with incorrect sizing.

@@ -20,7 +20,21 @@ private struct CachedParagraphUIViewSize {
 }
 
 class ParagraphUIView: UITextView {
+  let selectionActivityID = UUID()
+  var onSelectionActivity: (@MainActor @Sendable (UUID, Bool) -> Void)?
   var sourceBlockID: String?
+
+  override func becomeFirstResponder() -> Bool {
+    let accepted = super.becomeFirstResponder()
+    if accepted { onSelectionActivity?(selectionActivityID, selectedRange.length > 0) }
+    return accepted
+  }
+
+  override func resignFirstResponder() -> Bool {
+    let accepted = super.resignFirstResponder()
+    if accepted { onSelectionActivity?(selectionActivityID, false) }
+    return accepted
+  }
 
   private static let jsonEncoder = JSONEncoder()
   static let animationDuration: CFTimeInterval = ParagraphAnimationConstants.fadeInDuration
@@ -356,6 +370,18 @@ class ParagraphUIView: UITextView {
 
 // MARK: - UITextViewDelegate
 extension ParagraphUIView: UITextViewDelegate {
+  func textViewDidChangeSelection(_ textView: UITextView) {
+    onSelectionActivity?(selectionActivityID, textView.isFirstResponder && textView.selectedRange.length > 0)
+  }
+
+  func textViewDidBeginEditing(_ textView: UITextView) {
+    textViewDidChangeSelection(textView)
+  }
+
+  func textViewDidEndEditing(_ textView: UITextView) {
+    onSelectionActivity?(selectionActivityID, false)
+  }
+
   func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
     self.onUrlTap(URL)
     return false

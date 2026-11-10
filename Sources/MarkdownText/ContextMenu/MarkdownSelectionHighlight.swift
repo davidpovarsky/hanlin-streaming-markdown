@@ -33,3 +33,19 @@ public extension View {
     environment(\.markdownSelectionHighlight, highlight)
   }
 }
+
+private struct SelectionActivityKey: EnvironmentKey {
+  static let defaultValue: (@MainActor @Sendable (UUID, Bool) -> Void)? = nil
+}
+extension EnvironmentValues {
+  var markdownSelectionActivity: (@MainActor @Sendable (UUID, Bool) -> Void)? {
+    get { self[SelectionActivityKey.self] }
+    set { self[SelectionActivityKey.self] = newValue }
+  }
+}
+public extension View {
+  /// Lets the enclosing chat pause auto-follow/keyboard dismissal during selection.
+  func markdownSelectionActivity(_ onChange: @escaping @MainActor @Sendable (UUID, Bool) -> Void) -> some View {
+    environment(\.markdownSelectionActivity, onChange)
+  }
+}
