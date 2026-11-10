@@ -10,7 +10,7 @@ import XCTest
 
 final class LaTexPreProcessorTests: XCTestCase {
 
-  let preprocessor = LaTexPreProcessorImpl()
+  let preprocessor = ReadableMathPreprocessor()
 
   func testNoLatex() throws {
     let testString = "Your string with (parentheticals), [square parentheticals], and money, like $5. That's a lot of $$!"
@@ -310,5 +310,22 @@ final class LaTexPreProcessorTests: XCTestCase {
       matchingRules: [.inlineSlashBracket, .blockSlashBracket]
     )
     XCTAssertEqual(processed, expected)
+  }
+}
+
+private struct ReadableMathPreprocessor: LaTexPreProcessor {
+  private func readable(_ text: String) -> String {
+    text.replacingOccurrences(of: LaTexPreProcessorImpl.inlineCodePrefix, with: "\\(")
+      .replacingOccurrences(of: LaTexPreProcessorImpl.inlineCodeSuffix, with: "\\)")
+      .replacingOccurrences(of: LaTexPreProcessorImpl.customCodeType, with: "blockmath")
+  }
+  func process(input: String, matchingRules: [MarkdownParseOption.LatexMatching]) -> String {
+    readable(LaTexPreProcessorImpl().process(input: input, matchingRules: matchingRules))
+  }
+  func processInlineMath(input: String) -> String {
+    readable(LaTexPreProcessorImpl().processInlineMath(input: input))
+  }
+  func processBlockMath(input: String) -> String {
+    readable(LaTexPreProcessorImpl().processBlockMath(input: input))
   }
 }

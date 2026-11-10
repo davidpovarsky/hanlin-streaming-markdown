@@ -126,9 +126,12 @@ final class LaTexPreProcessorImpl: LaTexPreProcessor {
     }
   }
 
-  static let customCodeType = "blockmath"
-  static let inlineCodePrefix = "\\("
-  static let inlineCodeSuffix = "\\)"
+  // Private parse markers distinguish generated math from user-authored code.
+  // A process-local token cannot coerce a literal `\\(...\\)` example into math.
+  private static let mathToken = "hanlin-math-" + UUID().uuidString.lowercased()
+  static let customCodeType = mathToken
+  static let inlineCodePrefix = "<" + mathToken + ">"
+  static let inlineCodeSuffix = "</" + mathToken + ">"
   static let newline = "\n"
 
   init() {}
@@ -190,23 +193,21 @@ final class LaTexPreProcessorImpl: LaTexPreProcessor {
 
   /// This wraps inline math as inline code to avoid over-unescaping issue
   func processInlineMath(input: String, rules: Set<MarkdownParseOption.LatexMatching>) -> String {
+    var patterns: [String] = []
+    if rules.contains(.inlineSlashBracket) { patterns.append(#"\\\((.+?)\\\)"#) }
+    if rules.contains(.inlineDollar) { patterns.append(#"(?<!\$)\$(?![\s$])([^\r\n$]*?[^\s$]|[^\s$])\$(?![\d$])"#) }
+    guard !patterns.isEmpty, let expression = try? NSRegularExpression(pattern: patterns.joined(separator: "|")) else { return input }
     var result = input
-    if rules.contains(.inlineDollar),
-       let expression = try? NSRegularExpression(pattern: #"(?<![\\$])\$(?![\s$])([^\n$]*?[^\s$]|[^\s$])\$(?![\d$])"#) {
-      for match in expression.matches(in: result, range: NSRange(result.startIndex..., in: result)).reversed() {
-        guard let range = Range(match.range, in: result), let body = Range(match.range(at: 1), in: result) else { continue }
-        let latex = String(result[body]).filteringUnsupportedSyntaxes()
-        result.replaceSubrange(range, with: "`\\(\(latex)\\)`")
-      }
-    }
-    if rules.contains(.inlineSlashBracket) {
-      // Dollar math is already wrapped in a code span; do not wrap it twice.
-      result = result.replacing(Self.inlineParenthesisMath, with: { match in
-        let before = result[..<match.range.lowerBound]
-        if before.hasSuffix("`") || before.hasSuffix("\\") { return String(result[match.range]) }
-        let latex = String(match[Self.latexRef]).filteringUnsupportedSyntaxes()
-        return "`\\(\(latex)\\)`"
-      })
+    for match in expression.matches(in: input, range: NSRange(input.startIndex..., in: input)).reversed() {
+      guard let range = Range(match.range, in: result) else { continue }
+      let preceding = result[..<range.lowerBound].reversed().prefix { $0 == "\\" }.count
+      guard preceding.isMultiple(of: 2) else { continue }
+      guard let capture = (1..<match.numberOfRanges).first(where: { match.range(at: $0).location != NSNotFound }),
+            let body = Range(match.range(at: capture), in: result) else { continue }
+      let latex = String(result[body]).filteringUnsupportedSyntaxes()
+      let longestRun = latex.matches(of: Regex { OneOrMore("`") }).map { $0.output.count }.max() ?? 0
+      let fence = String(repeating: "`", count: longestRun + 1)
+      result.replaceSubrange(range, with: "\(fence)\(Self.inlineCodePrefix)\(latex)\(Self.inlineCodeSuffix)\(fence)")
     }
     return result
   }

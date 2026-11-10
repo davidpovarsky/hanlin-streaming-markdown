@@ -9,11 +9,30 @@ final class HanlinSelectionTests: XCTestCase {
   func testMathLeavesLiteralCodeAndCurrencyUntouched() {
     let source = #"`\(literal\)` and $5 versus $10, then $x^2$ and \(y\)."#
     let result = LaTexPreProcessorImpl().process(input: source)
+      .replacingOccurrences(of: LaTexPreProcessorImpl.inlineCodePrefix, with: "\\(")
+      .replacingOccurrences(of: LaTexPreProcessorImpl.inlineCodeSuffix, with: "\\)")
     XCTAssertEqual(result, #"`\(literal\)` and $5 versus $10, then `\(x^2\)` and `\(y\)`."#)
     let fenced = "```swift\nlet example = #\"\\(not math\\)\"#\n$$not math$$\n```"
     XCTAssertEqual(LaTexPreProcessorImpl().process(input: fenced), fenced)
     let unfinished = "```python\n\\(still code\\)"
     XCTAssertEqual(LaTexPreProcessorImpl().process(input: unfinished), unfinished)
+  }
+
+  func testLiteralMathLookingCodeIsNotGeneratedMath() async {
+    let parsed = await MarkdownParserImpl().parse(text: #"Literal `\(not math\)` and math \(x^2\)."#, option: .init(speculativeRewrite: false))
+    let document = await RenderableDocument(document: parsed.document, config: .default)
+    let text = document.attributedStrings.map(\.string).joined()
+    XCTAssertTrue(text.contains(#"\(not math\)"#))
+    #if canImport(UIKit)
+    let attachments = document.attributedStrings.reduce(0) { count, value in
+      var result = count
+      value.enumerateAttribute(.attachment, in: NSRange(location: 0, length: value.length)) { attachment, _, _ in
+        if attachment is NSTextAttachment { result += 1 }
+      }
+      return result
+    }
+    XCTAssertEqual(attachments, 1)
+    #endif
   }
 
   #if canImport(UIKit)
