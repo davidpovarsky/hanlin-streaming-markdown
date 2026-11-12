@@ -44,6 +44,8 @@ public struct MarkdownParseOption {
   public enum LatexMatching: String, Hashable, CaseIterable {
     /// Inline LaTeX delimited by `\(` … `\)`.
     case inlineSlashBracket
+    /// Inline LaTeX delimited by a single dollar pair (currency stays literal).
+    case inlineDollar
     /// Block LaTeX delimited by `$$` … `$$`.
     case blockDollar
     /// Block LaTeX delimited by `\[` … `\]`.

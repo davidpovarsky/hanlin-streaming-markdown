@@ -28,13 +28,14 @@ public final class MarkdownParserImpl: MarkdownParser {
 
     var result: MarkdownParseResult = MarkdownParseResult(
       document: Document(parsing: targetString),
-      speculativeRewritten: false
+      speculativeRewritten: false,
+      sourceText: targetString
     )
 
     if option.speculativeRewrite {
       for rewriter in rewriters {
         if let rewrittenDoc = rewriter.rewriteIfApplicable(document: result.document) {
-          result = MarkdownParseResult(document: rewrittenDoc, speculativeRewritten: true)
+          result = MarkdownParseResult(document: rewrittenDoc, speculativeRewritten: true, sourceText: targetString)
         }
       }
     }
@@ -43,7 +44,8 @@ public final class MarkdownParserImpl: MarkdownParser {
       if let rewrittenDoc = imageBlockRewriter.rewriteIfApplicable(document: result.document) {
         result = MarkdownParseResult(
           document: rewrittenDoc,
-          speculativeRewritten: result.speculativeRewritten
+          speculativeRewritten: result.speculativeRewritten,
+          sourceText: targetString
         )
       }
     }

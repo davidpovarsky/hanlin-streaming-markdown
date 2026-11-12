@@ -10,11 +10,11 @@ extension Markup {
 
   /// A unique ID of the markdown node, formed by using the path from root.
   var id: String {
-    var parentNode = self.parent
+    var node: Markup = self
     var path = [String]()
-    while parentNode != nil {
-      path.append(String(self.indexInParent))
-      parentNode = parentNode?.parent
+    while let parent = node.parent {
+      path.append(String(node.indexInParent))
+      node = parent
     }
     return path.joined(separator: "-")
   }

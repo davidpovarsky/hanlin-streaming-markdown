@@ -20,6 +20,17 @@ private struct CachedParagraphUIViewSize {
 }
 
 class ParagraphUIView: UITextView {
+  let selectionActivityID = UUID()
+  var onSelectionActivity: (@MainActor @Sendable (UUID, Bool) -> Void)?
+  var sourceBlockID: String?
+  private var isApplyingContents = false
+
+  override func becomeFirstResponder() -> Bool {
+    let accepted = super.becomeFirstResponder()
+    if accepted { onSelectionActivity?(selectionActivityID, selectedRange.length > 0) }
+    return accepted
+  }
+
   private static let jsonEncoder = JSONEncoder()
   static let animationDuration: CFTimeInterval = ParagraphAnimationConstants.fadeInDuration
 
@@ -64,6 +75,7 @@ class ParagraphUIView: UITextView {
     let result = super.resignFirstResponder()
     if result {
       selectedTextRange = nil
+      reportSelectionActivity(deferred: true)
     }
     return result
   }
@@ -111,6 +123,8 @@ class ParagraphUIView: UITextView {
     self.lineSpacing = lineSpacing
 
     let oldAttributedString: NSAttributedString = attributedText
+    let previousSelection = selectedRange
+    let wasSelecting = isFirstResponder && previousSelection.length > 0
     let finalString: NSMutableAttributedString
     if lineSpacing != nil {
       finalString = applyLineSpacing(to: newContents, lineSpacing: lineSpacing)
@@ -125,8 +139,21 @@ class ParagraphUIView: UITextView {
     // Stop display link update before updating the attributed string
     tearDownDisplayLink()
     invalidateCachedSize()
+    isApplyingContents = true
     attributedText = finalString
+    // Appending a stream must not dismiss or move an existing native selection.
+    // If a speculative rewrite changes that prefix, UIKit establishes a new selection.
+    if wasSelecting,
+       previousSelection.location != NSNotFound,
+       NSMaxRange(previousSelection) <= finalString.length,
+       NSMaxRange(previousSelection) <= oldAttributedString.length,
+       (finalString.string as NSString).substring(to: NSMaxRange(previousSelection)) ==
+         (oldAttributedString.string as NSString).substring(to: NSMaxRange(previousSelection)) {
+      selectedRange = previousSelection
+    }
 
+    isApplyingContents = false
+    reportSelectionActivity(deferred: true)
     configureAccessibility(for: finalString)
 
     invalidateIntrinsicContentSize()
@@ -178,7 +205,8 @@ class ParagraphUIView: UITextView {
     isEditable = false
     isSelectable = true
     isScrollEnabled = false
-    textAlignment = .left
+    textAlignment = .natural
+    adjustsFontForContentSizeCategory = true
     backgroundColor = .clear
     if #available(iOS 18.0, *) {
       writingToolsBehavior = .none
@@ -341,6 +369,28 @@ class ParagraphUIView: UITextView {
 
 // MARK: - UITextViewDelegate
 extension ParagraphUIView: UITextViewDelegate {
+  fileprivate func reportSelectionActivity(deferred: Bool = false) {
+    guard !isApplyingContents else { return }
+    if deferred {
+      // UIViewRepresentable content/removal updates must not synchronously
+      // mutate the enclosing SwiftUI chat's state. Read the latest selection.
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        self.onSelectionActivity?(self.selectionActivityID, self.isFirstResponder && self.selectedRange.length > 0)
+      }
+    } else {
+      onSelectionActivity?(selectionActivityID, isFirstResponder && selectedRange.length > 0)
+    }
+  }
+
+  func textViewDidChangeSelection(_ textView: UITextView) {
+    reportSelectionActivity(deferred: !(textView.isFirstResponder && textView.selectedRange.length > 0))
+  }
+
+  func textViewDidBeginEditing(_ textView: UITextView) { textViewDidChangeSelection(textView) }
+
+  func textViewDidEndEditing(_ textView: UITextView) { reportSelectionActivity(deferred: true) }
+
   func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
     self.onUrlTap(URL)
     return false
@@ -383,7 +433,7 @@ fileprivate extension NSMutableAttributedString {
   func setLineSpacing(_ lineSpacing: CGFloat) {
     let paragraphStyle = NSMutableParagraphStyle()
     paragraphStyle.lineSpacing = lineSpacing
-    paragraphStyle.alignment = .left
+    paragraphStyle.alignment = .natural
     addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: length))
   }
 }

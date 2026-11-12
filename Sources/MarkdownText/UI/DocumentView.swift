@@ -36,6 +36,7 @@ public struct DocumentView: View {
   public var body: some View {
     BlockView(renderables: renderableDocument.renderables)
     .environment(\.markdownConfig, config)
+    .environment(\.markdownCodeBlockFenceClosure, renderableDocument.codeBlockFenceClosure)
     .environment(\.markdownController, controller)
     .task {
       await controller.onAppear(markdown: renderableDocument)

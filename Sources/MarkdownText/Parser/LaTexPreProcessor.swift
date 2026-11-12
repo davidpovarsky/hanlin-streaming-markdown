@@ -5,6 +5,7 @@
 
 import Foundation
 import RegexBuilder
+import Markdown
 
 /// Pre-process the inline and block latex in markdown.
 /// This is a less heavy-weight approach than forking commonmark-gfm and swift-markdown to support parsing latex nodes.
@@ -125,17 +126,48 @@ final class LaTexPreProcessorImpl: LaTexPreProcessor {
     }
   }
 
-  static let customCodeType = "blockmath"
-  static let inlineCodePrefix = "\\("
-  static let inlineCodeSuffix = "\\)"
+  // Private parse markers distinguish generated math from user-authored code.
+  // A process-local token cannot coerce a literal `\\(...\\)` example into math.
+  private static let mathToken = "hanlin-math-" + UUID().uuidString.lowercased()
+  static let customCodeType = mathToken
+  static let inlineCodePrefix = "<" + mathToken + ">"
+  static let inlineCodeSuffix = "</" + mathToken + ">"
   static let newline = "\n"
 
   init() {}
 
   func process(input: String, matchingRules: [MarkdownParseOption.LatexMatching]) -> String {
     let rules = Set(matchingRules)
-    let result = processBlockMath(input: input, rules: rules)
-    return processInlineMath(input: result, rules: rules)
+    // CommonMark determines literal code ranges before math preprocessing.
+    // Hide them temporarily so examples and unfinished streamed fences stay literal.
+    let bytes = Array(input.utf8)
+    var lineStarts = [0]
+    for (index, byte) in bytes.enumerated() where byte == 10 { lineStarts.append(index + 1) }
+    var protected: [(Range<Int>, String)] = []
+    func visit(_ node: Markup) {
+      if node is CodeBlock || node is InlineCode, let range = node.range {
+        let start = lineStarts[range.lowerBound.line - 1] + range.lowerBound.column - 1
+        let end = lineStarts[range.upperBound.line - 1] + range.upperBound.column - 1
+        if start >= 0 && end >= start && end <= bytes.count {
+          protected.append((start..<end, String(decoding: bytes[start..<end], as: UTF8.self)))
+        }
+        return
+      }
+      for child in node.children { visit(child) }
+    }
+    visit(Document(parsing: input))
+    var masked = bytes
+    var replacements: [(String, String)] = []
+    for (range, original) in protected.sorted(by: { $0.0.lowerBound > $1.0.lowerBound }) {
+      let token = "HANLITERAL" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+      let marker = token + String(repeating: "\n", count: original.filter { $0 == "\n" }.count)
+      masked.replaceSubrange(range, with: marker.utf8)
+      replacements.append((marker, original))
+    }
+    let block = processBlockMath(input: String(decoding: masked, as: UTF8.self), rules: rules)
+    var result = processInlineMath(input: block, rules: rules)
+    for (marker, original) in replacements { result = result.replacingOccurrences(of: marker, with: original) }
+    return result
   }
 
   /// This replace block math with a special code block node. By treating it as a code block it will avoid over escaping characters within latex.
@@ -161,11 +193,23 @@ final class LaTexPreProcessorImpl: LaTexPreProcessor {
 
   /// This wraps inline math as inline code to avoid over-unescaping issue
   func processInlineMath(input: String, rules: Set<MarkdownParseOption.LatexMatching>) -> String {
-    guard rules.contains(.inlineSlashBracket) else { return input }
-    return input.replacing(Self.inlineParenthesisMath, with: { match in
-      let latex = String(match[Self.latexRef]).filteringUnsupportedSyntaxes()
-      return "`\\(\(latex)\\)`"
-    })
+    var patterns: [String] = []
+    if rules.contains(.inlineSlashBracket) { patterns.append(#"\\\((.+?)\\\)"#) }
+    if rules.contains(.inlineDollar) { patterns.append(#"(?<!\$)\$(?![\s$])([^\r\n$]*?[^\s$]|[^\s$])\$(?![\d$])"#) }
+    guard !patterns.isEmpty, let expression = try? NSRegularExpression(pattern: patterns.joined(separator: "|")) else { return input }
+    var result = input
+    for match in expression.matches(in: input, range: NSRange(input.startIndex..., in: input)).reversed() {
+      guard let range = Range(match.range, in: result) else { continue }
+      let preceding = result[..<range.lowerBound].reversed().prefix { $0 == "\\" }.count
+      guard preceding.isMultiple(of: 2) else { continue }
+      guard let capture = (1..<match.numberOfRanges).first(where: { match.range(at: $0).location != NSNotFound }),
+            let body = Range(match.range(at: capture), in: result) else { continue }
+      let latex = String(result[body]).filteringUnsupportedSyntaxes()
+      let longestRun = latex.matches(of: Regex { OneOrMore("`") }).map { $0.output.count }.max() ?? 0
+      let fence = String(repeating: "`", count: longestRun + 1)
+      result.replaceSubrange(range, with: "\(fence)\(Self.inlineCodePrefix)\(latex)\(Self.inlineCodeSuffix)\(fence)")
+    }
+    return result
   }
 
   // MARK: - Convenience overloads (default to every supported rule)
