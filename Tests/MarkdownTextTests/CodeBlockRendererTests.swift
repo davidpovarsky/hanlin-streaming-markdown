@@ -4,6 +4,7 @@
 //
 
 @testable import SwiftStreamingMarkdown
+import Markdown
 import SwiftUI
 import XCTest
 #if canImport(UIKit)
@@ -35,7 +36,8 @@ final class CodeBlockRendererTests: XCTestCase {
     }
     for source in ["> ```mermaid\n> flowchart LR\n> A-->B\n> ```", "$$x^2$$\n\n~~~mermaid\nflowchart LR\nA-->B\n~~~"] {
       let complete = await parser.parse(text: source, config: .default)
-      let mermaidID = codeBlocks(in: complete).first { $0.language == "mermaid" }?.id ?? ""
+      let parsed = await parser.parse(text: source)
+      let mermaidID = firstMermaidBlock(in: parsed)?.id ?? ""
       XCTAssertEqual(complete.codeBlockFenceClosure[mermaidID], true)
     }
   }
@@ -83,5 +85,13 @@ final class CodeBlockRendererTests: XCTestCase {
       guard case .codeBlock(let id, let language, let code) = block else { return nil }
       return MarkdownCodeBlock(id: id, language: language, code: code)
     }
+  }
+
+  private func firstMermaidBlock(in node: Markup) -> Markdown.CodeBlock? {
+    if let block = node as? Markdown.CodeBlock, block.language == "mermaid" { return block }
+    for child in node.children {
+      if let block = firstMermaidBlock(in: child) { return block }
+    }
+    return nil
   }
 }
