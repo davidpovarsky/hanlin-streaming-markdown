@@ -11,11 +11,15 @@ public struct MarkdownCodeBlock: Hashable, Sendable, Identifiable {
   public let id: String
   public let language: String?
   public let code: String
+  /// True only when a closing delimiter was verified against the parser's
+  /// processed source. Nil means that source coverage is unavailable.
+  public let isFenceClosed: Bool?
 
-  public init(id: String, language: String?, code: String) {
+  public init(id: String, language: String?, code: String, isFenceClosed: Bool? = nil) {
     self.id = id
     self.language = language
     self.code = code
+    self.isFenceClosed = isFenceClosed
   }
 }
 
@@ -27,7 +31,15 @@ private struct MarkdownCodeBlockRendererKey: EnvironmentKey {
   static let defaultValue: MarkdownCodeBlockRenderer? = nil
 }
 
+private struct MarkdownCodeBlockFenceClosureKey: EnvironmentKey {
+  static let defaultValue: [String: Bool] = [:]
+}
+
 extension EnvironmentValues {
+  var markdownCodeBlockFenceClosure: [String: Bool] {
+    get { self[MarkdownCodeBlockFenceClosureKey.self] }
+    set { self[MarkdownCodeBlockFenceClosureKey.self] = newValue }
+  }
   public var markdownCodeBlockRenderer: MarkdownCodeBlockRenderer? {
     get { self[MarkdownCodeBlockRendererKey.self] }
     set { self[MarkdownCodeBlockRendererKey.self] = newValue }

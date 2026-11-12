@@ -26,6 +26,18 @@ final class CodeBlockRendererTests: XCTestCase {
     XCTAssertEqual(partial.first?.id, complete.first?.id)
     XCTAssertEqual(complete.first?.language, "mermaid")
     XCTAssertEqual(complete.first?.code, "sequenceDiagram\nA->>B: שלום\n")
+    XCTAssertEqual(first.codeBlockFenceClosure[partial.first?.id ?? ""], false)
+    XCTAssertEqual(second.codeBlockFenceClosure[complete.first?.id ?? ""], true)
+    XCTAssertNotEqual(first, second, "Closing a fence must update a document even when literal code is unchanged")
+    for source in ["```mermaid\nflowchart LR\nA-->B\n    ```", "~~~mermaid\nflowchart LR\nA-->B\n```"] {
+      let incomplete = await parser.parse(text: source, config: .default)
+      XCTAssertFalse(incomplete.codeBlockFenceClosure.values.contains(true))
+    }
+    for source in ["> ```mermaid\n> flowchart LR\n> A-->B\n> ```", "$$x^2$$\n\n~~~mermaid\nflowchart LR\nA-->B\n~~~"] {
+      let complete = await parser.parse(text: source, config: .default)
+      let mermaidID = codeBlocks(in: complete).first { $0.language == "mermaid" }?.id ?? ""
+      XCTAssertEqual(complete.codeBlockFenceClosure[mermaidID], true)
+    }
   }
 
   #if canImport(UIKit)
@@ -48,6 +60,7 @@ final class CodeBlockRendererTests: XCTestCase {
     XCTAssertEqual(capture.block?.id, "1")
     XCTAssertEqual(capture.block?.language, "mermaid")
     XCTAssertEqual(capture.block?.code, "flowchart LR\nA-->B\n")
+    XCTAssertEqual(capture.block?.isFenceClosed, true)
   }
 
   @MainActor

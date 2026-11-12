@@ -12,4 +12,12 @@ public struct MarkdownParseResult {
   /// `true` if the parser applied a speculative rewrite (e.g. completing a
   /// partial table or emphasis) before returning the document.
   public let speculativeRewritten: Bool
+  /// Source after the configured preprocessor, matching Document source ranges.
+  public let sourceText: String?
+
+  public init(document: Document, speculativeRewritten: Bool, sourceText: String? = nil) {
+    self.document = document
+    self.speculativeRewritten = speculativeRewritten
+    self.sourceText = sourceText
+  }
 }

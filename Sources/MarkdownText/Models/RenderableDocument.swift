@@ -17,6 +17,7 @@ import AppKit
 /// the heavyweight step; rendering it is cheap.
 public struct RenderableDocument: Equatable, Sendable {
   let renderables: [MarkdownRenderable]
+  let codeBlockFenceClosure: [String: Bool]
 
   var containsCodeBlock: Bool {
     return renderables.contains(where: { $0.isCodeBlock })
@@ -35,7 +36,12 @@ public struct RenderableDocument: Equatable, Sendable {
   ///   - document: The parsed markdown tree.
   ///   - config: Styling and behavior used during conversion.
   public init(document: Markdown.Document, config: MarkdownRenderConfig) async {
+    await self.init(document: document, config: config, sourceText: nil)
+  }
+
+  init(document: Markdown.Document, config: MarkdownRenderConfig, sourceText: String?) async {
     self.renderables = document.convert(with: config)
+    self.codeBlockFenceClosure = sourceText.map { Self.fenceClosure(in: document, source: $0) } ?? [:]
   }
 
   /// Construct a renderable wrapping a single plain-text paragraph styled
@@ -55,6 +61,7 @@ public struct RenderableDocument: Equatable, Sendable {
 
   init(renderables: [MarkdownRenderable]) {
     self.renderables = renderables
+    self.codeBlockFenceClosure = [:]
   }
 
   /// An empty document, equivalent to `RenderableDocument(plainText: "", …)`
