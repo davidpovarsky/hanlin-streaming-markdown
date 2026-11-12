@@ -10,7 +10,7 @@ import XCTest
 
 final class LaTexPreProcessorTests: XCTestCase {
 
-  let preprocessor = ReadableMathPreprocessor()
+  private let preprocessor = ReadableMathPreprocessor()
 
   func testNoLatex() throws {
     let testString = "Your string with (parentheticals), [square parentheticals], and money, like $5. That's a lot of $$!"
