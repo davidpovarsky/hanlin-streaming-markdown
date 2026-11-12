@@ -28,6 +28,7 @@ struct BlockView: View {
 struct SingleBlockView: View {
 
   @Environment(\.markdownConfig) var config: MarkdownRenderConfig
+  @Environment(\.markdownCodeBlockRenderer) var codeBlockRenderer: MarkdownCodeBlockRenderer?
 
   let renderable: MarkdownRenderable
 
@@ -57,9 +58,12 @@ struct SingleBlockView: View {
         OrderedListView(items: items)
       case .unorderedList(_, let items, let nestedLevel):
         UnorderedListView(items: items, nestedLevel: nestedLevel)
-      case .codeBlock(_, let language, let code):
-        CodeBlockView(language: language ?? "",
-                      code: code)
+      case .codeBlock(let id, let language, let code):
+        if let custom = codeBlockRenderer?(MarkdownCodeBlock(id: id, language: language, code: code)) {
+          custom
+        } else {
+          CodeBlockView(language: language ?? "", code: code)
+        }
       case .thematicBreak:
         ThematicBreakView()
       case .table(_, let headers, let rows, let rawMarkdown):

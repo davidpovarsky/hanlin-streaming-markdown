@@ -48,11 +48,15 @@ struct CodeBlockView: View {
         if #available(iOS 16.1, *) {  // Minimum version for HighlightSwift
           Text(attributedString ?? AttributedString(code))
             .font(config.codeBlockConfig.codeTextFonts)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: true, vertical: false)
             .transition(.opacity)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
           Text(code)
             .font(config.codeBlockConfig.codeTextFonts)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(Color.Theme.Component.CodeBlock.Foreground.FunctionParameter)
             .transition(.opacity)
         }
@@ -120,7 +124,10 @@ struct CodeBlockView: View {
             ))
           )
         })
-    }.onChange(of: copied, perform: { isCopied in
+    }
+    .environment(\.layoutDirection, .leftToRight)
+    .multilineTextAlignment(.leading)
+    .onChange(of: copied, perform: { isCopied in
       if isCopied {
         Task {
           try await Task.sleep(seconds: 3)
