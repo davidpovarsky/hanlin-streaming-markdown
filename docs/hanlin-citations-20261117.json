@@ -1,0 +1,18 @@
+{
+  "baseSHA": "f59bd0d533b6d94e01408bf6bdf9f5b09db57891",
+  "scope": "Preserve original citation attachments and Markdown pipeline; accept host-supplied favicon bitmaps and preserve imageConfig through builder chains. No networking/authority/storage in renderer.",
+  "files": {
+    "Sources/MarkdownText/Citation/InlineCitationAttachment.swift": "463fadfb7c7deb9bb5ae767fd0fd53ccce704eec9d6d127408662f1ad1f1fa32",
+    "Sources/MarkdownText/Models/MarkdownRenderConfig+Builders.swift": "d1d8a41e075cae4205c7ec14f894b44b4046967806a975af5f441ee5bde2562d",
+    "Sources/MarkdownText/Models/MarkdownRenderConfig.swift": "340ab16dcf14181d4df2e3d4b029120d1b995d36b19b79f9b9aeb5729aa916d5",
+    "Tests/MarkdownTextTests/CitationIconTests.swift": "e3607c2672cefc4ab348a87d10e0a0447b85ec0e85571ffc5b996d3608622247"
+  },
+  "plannedNativeTests": [
+    "CitationIconTests/testOriginalCitationInitializerFunctionTypeRemainsCompatible",
+    "CitationIconTests/testFormattingBuildersPreserveImagesCitationsAndSelection",
+    "CitationIconTests/testHostSuppliedIconRendersInsideTheOriginalCitationAttachmentInBothDirections",
+    "CodeBlockRendererTests",
+    "CodeBlockConfigTests"
+  ],
+  "acceptance": "Native iOS consumer proof required; Windows parse is syntax only."
+}

@@ -182,6 +182,10 @@ public struct MarkdownRenderConfig: Hashable, Sendable {
     public let textColor: Color
     /// Background fill of the citation chip.
     public let backgroundColor: Color
+    /// Small, host-supplied favicon images keyed by the exact citation URL.
+    /// The renderer never performs network access or resolves source authority.
+    public let iconsByCitationURL: [String: Data]
+    public let iconOnTrailingEdge: Bool
 
     /// Create a citation configuration.
     /// - Parameters:
@@ -197,11 +201,26 @@ public struct MarkdownRenderConfig: Hashable, Sendable {
       textColor: Color,
       backgroundColor: Color
     ) {
+      self.init(isEnabled: isEnabled, coder: coder, font: font, textColor: textColor,
+                backgroundColor: backgroundColor, iconsByCitationURL: [:])
+    }
+
+    public init(
+      isEnabled: Bool = true,
+      coder: CitationCoder = .default,
+      font: MDFont,
+      textColor: Color,
+      backgroundColor: Color,
+      iconsByCitationURL: [String: Data],
+      iconOnTrailingEdge: Bool = false
+    ) {
       self.isEnabled = isEnabled
       self.coder = coder
       self.font = font
       self.textColor = textColor
       self.backgroundColor = backgroundColor
+      self.iconsByCitationURL = iconsByCitationURL
+      self.iconOnTrailingEdge = iconOnTrailingEdge
     }
 
     /// Default citation styling derived from the bundled `Typography` and `Color.Theme` palette.

@@ -68,17 +68,18 @@ final class InlineCitationAttachment: NSTextAttachment {
     self.font = citationConfig.font
     self.textColor = MDColor(citationConfig.textColor)
     self.backgroundColor = MDColor(citationConfig.backgroundColor)
+    let icon = citationData.flatMap { citationConfig.iconsByCitationURL[$0.url.absoluteString] }
 
     if let title = citationData?.title {
       self.lightPreviewImage = Self.renderCitationImage(
         title: title, font: self.font,
         textColor: self.textColor, backgroundColor: self.backgroundColor,
-        appearance: .light
+        appearance: .light, iconData: icon, iconOnTrailingEdge: citationConfig.iconOnTrailingEdge
       )
       self.darkPreviewImage = Self.renderCitationImage(
         title: title, font: self.font,
         textColor: self.textColor, backgroundColor: self.backgroundColor,
-        appearance: .dark
+        appearance: .dark, iconData: icon, iconOnTrailingEdge: citationConfig.iconOnTrailingEdge
       )
     } else {
       self.lightPreviewImage = nil
@@ -106,7 +107,7 @@ final class InlineCitationAttachment: NSTextAttachment {
   private static func renderCitationImage(
     title: String, font: MDFont,
     textColor: MDColor, backgroundColor: MDColor,
-    appearance: AppAppearance
+    appearance: AppAppearance, iconData: Data?, iconOnTrailingEdge: Bool
   ) -> MDImage {
     // Resolve colors for the target appearance
     #if canImport(UIKit)
@@ -124,9 +125,13 @@ final class InlineCitationAttachment: NSTextAttachment {
 
     let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: resolvedTextColor]
     let textSize = (title as NSString).size(withAttributes: attributes)
+    let icon = iconData.flatMap { MDImage(data: $0) }
+    let iconSide: CGFloat = icon == nil ? 0 : max(12, min(20, font.pointSize + 2))
+    let iconSpace: CGFloat = icon == nil ? 0 : iconSide + 4
+    let contentHeight = max(ceil(textSize.height), iconSide)
     let totalSize = CGSize(
-      width: ceil(textSize.width) + textInsets.left + textInsets.right,
-      height: ceil(textSize.height) + textInsets.top + textInsets.bottom
+      width: ceil(textSize.width) + textInsets.left + textInsets.right + iconSpace,
+      height: contentHeight + textInsets.top + textInsets.bottom
     )
 
     // Render the citation pill image
@@ -138,9 +143,11 @@ final class InlineCitationAttachment: NSTextAttachment {
       resolvedBackgroundColor.setFill()
       path.fill()
 
-      let textRect = CGRect(x: textInsets.left, y: textInsets.top,
+      let textRect = CGRect(x: textInsets.left + (iconOnTrailingEdge ? 0 : iconSpace), y: textInsets.top,
                             width: ceil(textSize.width), height: ceil(textSize.height))
       (title as NSString).draw(in: textRect, withAttributes: attributes)
+      icon?.draw(in: CGRect(x: iconOnTrailingEdge ? totalSize.width - textInsets.right - iconSide : textInsets.left,
+                           y: textInsets.top + (contentHeight - iconSide) / 2, width: iconSide, height: iconSide))
     }
     #elseif canImport(AppKit)
     return NSImage(size: totalSize, flipped: false) { rect in
@@ -148,9 +155,11 @@ final class InlineCitationAttachment: NSTextAttachment {
       resolvedBackgroundColor.setFill()
       path.fill()
 
-      let textRect = CGRect(x: Self.textInsets.left, y: Self.textInsets.bottom,
+      let textRect = CGRect(x: Self.textInsets.left + (iconOnTrailingEdge ? 0 : iconSpace), y: Self.textInsets.bottom,
                             width: ceil(textSize.width), height: ceil(textSize.height))
       (title as NSString).draw(in: textRect, withAttributes: attributes)
+      icon?.draw(in: CGRect(x: iconOnTrailingEdge ? totalSize.width - Self.textInsets.right - iconSide : Self.textInsets.left,
+                           y: Self.textInsets.bottom + (contentHeight - iconSide) / 2, width: iconSide, height: iconSide))
       return true
     }
     #endif

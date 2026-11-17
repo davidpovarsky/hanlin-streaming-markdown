@@ -7,6 +7,26 @@ import Foundation
 import SwiftUI
 
 extension MarkdownRenderConfig {
+  /// Returns a copy with the host citation styling replaced, preserving images and selection.
+  public func withCitationConfig(value: CitationConfig) -> MarkdownRenderConfig {
+    MarkdownRenderConfig(
+      shouldAnimateText: shouldAnimateText,
+      blockQuoteStyle: blockQuoteStyle,
+      headingStyle: headingStyle,
+      orderedListStyle: orderedListStyle,
+      paragraphStyle: paragraphStyle,
+      tableStyle: tableStyle,
+      inlineStyle: inlineStyle,
+      textContextMenu: textContextMenu,
+      citationConfig: value,
+      codeBlockConfig: codeBlockConfig,
+      blockSpacing: blockSpacing,
+      textSelectionConfig: textSelectionConfig,
+      thematicBreakColor: thematicBreakColor,
+      imageConfig: imageConfig
+    )
+  }
+
   /// Returns a copy with `shouldAnimateText` replaced.
   public func withShouldAnimateText(value: Bool) -> MarkdownRenderConfig {
     MarkdownRenderConfig(
@@ -22,7 +42,8 @@ extension MarkdownRenderConfig {
       codeBlockConfig: codeBlockConfig,
       blockSpacing: blockSpacing,
       textSelectionConfig: textSelectionConfig,
-      thematicBreakColor: thematicBreakColor
+      thematicBreakColor: thematicBreakColor,
+      imageConfig: imageConfig
     )
   }
 
@@ -41,7 +62,8 @@ extension MarkdownRenderConfig {
       codeBlockConfig: codeBlockConfig,
       blockSpacing: blockSpacing,
       textSelectionConfig: textSelectionConfig,
-      thematicBreakColor: thematicBreakColor
+      thematicBreakColor: thematicBreakColor,
+      imageConfig: imageConfig
     )
   }
 
@@ -60,7 +82,8 @@ extension MarkdownRenderConfig {
       codeBlockConfig: codeBlockConfig,
       blockSpacing: blockSpacing,
       textSelectionConfig: textSelectionConfig,
-      thematicBreakColor: thematicBreakColor
+      thematicBreakColor: thematicBreakColor,
+      imageConfig: imageConfig
     )
   }
 
@@ -79,7 +102,8 @@ extension MarkdownRenderConfig {
       codeBlockConfig: codeBlockConfig,
       blockSpacing: blockSpacing,
       textSelectionConfig: textSelectionConfig,
-      thematicBreakColor: thematicBreakColor
+      thematicBreakColor: thematicBreakColor,
+      imageConfig: imageConfig
     )
   }
 
@@ -98,7 +122,8 @@ extension MarkdownRenderConfig {
       codeBlockConfig: codeBlockConfig,
       blockSpacing: blockSpacing,
       textSelectionConfig: textSelectionConfig,
-      thematicBreakColor: thematicBreakColor
+      thematicBreakColor: thematicBreakColor,
+      imageConfig: imageConfig
     )
   }
 
@@ -117,7 +142,8 @@ extension MarkdownRenderConfig {
       codeBlockConfig: codeBlockConfig,
       blockSpacing: blockSpacing,
       textSelectionConfig: textSelectionConfig,
-      thematicBreakColor: thematicBreakColor
+      thematicBreakColor: thematicBreakColor,
+      imageConfig: imageConfig
     )
   }
 
@@ -136,7 +162,8 @@ extension MarkdownRenderConfig {
       codeBlockConfig: codeBlockConfig,
       blockSpacing: blockSpacing,
       textSelectionConfig: textSelectionConfig,
-      thematicBreakColor: thematicBreakColor
+      thematicBreakColor: thematicBreakColor,
+      imageConfig: imageConfig
     )
   }
 
@@ -156,7 +183,8 @@ extension MarkdownRenderConfig {
       codeBlockConfig: codeBlockConfig,
       blockSpacing: blockSpacing,
       textSelectionConfig: textSelectionConfig,
-      thematicBreakColor: thematicBreakColor
+      thematicBreakColor: thematicBreakColor,
+      imageConfig: imageConfig
     )
   }
 
@@ -175,7 +203,8 @@ extension MarkdownRenderConfig {
       codeBlockConfig: codeBlockConfig,
       blockSpacing: value,
       textSelectionConfig: textSelectionConfig,
-      thematicBreakColor: thematicBreakColor
+      thematicBreakColor: thematicBreakColor,
+      imageConfig: imageConfig
     )
   }
 
@@ -194,7 +223,8 @@ extension MarkdownRenderConfig {
       codeBlockConfig: value,
       blockSpacing: blockSpacing,
       textSelectionConfig: textSelectionConfig,
-      thematicBreakColor: thematicBreakColor
+      thematicBreakColor: thematicBreakColor,
+      imageConfig: imageConfig
     )
   }
 
@@ -214,7 +244,8 @@ extension MarkdownRenderConfig {
       codeBlockConfig: codeBlockConfig,
       blockSpacing: blockSpacing,
       textSelectionConfig: value,
-      thematicBreakColor: thematicBreakColor
+      thematicBreakColor: thematicBreakColor,
+      imageConfig: imageConfig
     )
   }
 
@@ -233,7 +264,8 @@ extension MarkdownRenderConfig {
       codeBlockConfig: codeBlockConfig,
       blockSpacing: blockSpacing,
       textSelectionConfig: textSelectionConfig,
-      thematicBreakColor: value
+      thematicBreakColor: value,
+      imageConfig: imageConfig
     )
   }
 
