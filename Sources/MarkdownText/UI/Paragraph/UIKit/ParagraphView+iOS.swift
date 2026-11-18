@@ -55,6 +55,9 @@ struct ParagraphView: UIViewRepresentable {
   }
 
   func updateUIView(_ view: ParagraphUIView, context: Context) {
+    // A retained paragraph must use its current SwiftUI presenter's action,
+    // including after the host changes while the native text view stays mounted.
+    view.onUrlTap = openURL.callAsFunction(_:)
     if view.paragraphContents != displayedContents || view.lineSpacing != lineSpacing {
       let shouldAnimate = view.window != nil && config.shouldAnimateText // only animate when visible
       view.setParagraphContents(displayedContents, lineSpacing: lineSpacing, animatedByWord: shouldAnimate)
