@@ -45,7 +45,7 @@ final class RichBlockAttachmentRenderingTests: XCTestCase {
     guard case .paragraph(_, let contents)? = document.selectionRenderables?.first else {
       return XCTFail("The real parser must produce a continuous native document")
     }
-    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 700, height: 900))
+    let window = try makeWindow(size: CGSize(width: 700, height: 900))
     let controller = UIViewController()
     window.rootViewController = controller
     let view = ParagraphUIView(frame: CGRect(x: 20, y: 20, width: 640, height: 800), textContainer: nil)
@@ -90,7 +90,7 @@ final class RichBlockAttachmentRenderingTests: XCTestCase {
           case .paragraph(_, let updated)? = appended.selectionRenderables?.first else {
       return XCTFail("Expected actual continuous selection documents")
     }
-    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 500, height: 900))
+    let window = try makeWindow(size: CGSize(width: 500, height: 900))
     let controller = UIViewController()
     window.rootViewController = controller
     let view = ParagraphUIView(frame: CGRect(x: 20, y: 20, width: 460, height: 800), textContainer: nil)
@@ -116,6 +116,15 @@ final class RichBlockAttachmentRenderingTests: XCTestCase {
     XCTAssertEqual(view.selectedRange, selection)
     XCTAssertEqual(richHosts(in: view).count, 2)
     XCTAssertNotNil(view.textLayoutManager)
+  }
+
+  private func makeWindow(size: CGSize) throws -> UIWindow {
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .first { $0.activationState == .foregroundActive }, "The native probe requires its foreground host scene")
+    let window = UIWindow(windowScene: scene)
+    window.frame = CGRect(origin: .zero, size: size)
+    return window
   }
 
   private func richHosts(in view: UIView) -> [MarkdownRichBlockHostView] {
