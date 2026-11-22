@@ -7,7 +7,6 @@ import UIKit
 /// Canonical parser attachments are immutable. A native text view creates its
 /// own weakly owned copy only when that attachment enters the changed tail.
 final class MarkdownRichBlockAttachment: NSTextAttachment {
-  static let contentType = "com.hanlin.markdown.rich-block"
   let block: MarkdownRenderable
   let selectionText: String
   private let isViewOwned: Bool
@@ -17,9 +16,9 @@ final class MarkdownRichBlockAttachment: NSTextAttachment {
     self.block = block
     self.selectionText = selectionText
     self.isViewOwned = isViewOwned
-    // TextKit treats a nil payload or type as an attachment without document
-    // contents. Supply non-nil typed data; the rich block itself stays in memory.
-    super.init(data: Data(), ofType: Self.contentType)
+    // Rich blocks live in memory and supply their view provider directly.
+    // They have no serialized file contents or file-type lookup contract.
+    super.init(data: nil, ofType: nil)
     allowsTextAttachmentView = true
   }
 
