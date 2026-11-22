@@ -21,6 +21,15 @@ final class MarkdownRichBlockAttachment: NSTextAttachment {
 
   required init?(coder: NSCoder) { return nil }
 
+  override func viewProvider(for parentView: UIView?, location: any NSTextLocation,
+                             textContainer: NSTextContainer?) -> NSTextAttachmentViewProvider? {
+    // This is an in-memory rich block, not an arbitrary attached file. Resolve
+    // its renderer directly: UIKit may already return a generic file provider
+    // for an unregistered UTI, and parser attachments predate their text view.
+    MarkdownRichBlockViewProvider(textAttachment: self, parentView: parentView,
+      textLayoutManager: textContainer?.textLayoutManager, location: location)
+  }
+
   override func isEqual(_ object: Any?) -> Bool {
     guard let other = object as? MarkdownRichBlockAttachment else { return false }
     return block == other.block && selectionText == other.selectionText

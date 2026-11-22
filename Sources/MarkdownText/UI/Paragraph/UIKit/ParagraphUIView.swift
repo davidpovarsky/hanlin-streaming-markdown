@@ -337,11 +337,6 @@ class ParagraphUIView: UITextView {
       NSTextAttachment.registerViewProviderClass(LatexViewProvider.self, forFileType: UTType.data.identifier)
     }
 
-    if NSTextAttachment.textAttachmentViewProviderClass(forFileType: MarkdownRichBlockAttachment.contentType) == nil {
-      NSTextAttachment.registerViewProviderClass(MarkdownRichBlockViewProvider.self,
-        forFileType: MarkdownRichBlockAttachment.contentType)
-    }
-
     isEditable = false
     isSelectable = true
     isScrollEnabled = false
