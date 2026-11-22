@@ -11,6 +11,13 @@ struct ParagraphView: UIViewRepresentable {
   @Environment(\.openURL) var openURL
   @Environment(\.markdownConfig) var config: MarkdownRenderConfig
   @Environment(\.markdownController) var markdownController: MarkdownController?
+  @Environment(\.markdownEmbeddedBlockRenderer) private var embeddedBlockRenderer
+  @Environment(\.markdownCodeBlockRenderer) private var codeBlockRenderer
+  @Environment(\.markdownCodeBlockFenceClosure) private var fenceClosure
+  @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.locale) private var locale
+  @Environment(\.layoutDirection) private var layoutDirection
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   @Environment(\.markdownSelectionBlockID) var sourceBlockID
   @Environment(\.markdownSelectionHighlight) var highlight
@@ -38,6 +45,7 @@ struct ParagraphView: UIViewRepresentable {
     let openUrlFunction = openURL.callAsFunction(_:)
     let view = ParagraphViewCache.shared.createOrReuseView(contents: contents, lineSpacing: lineSpacing)
     view.onUrlTap = openUrlFunction
+    configureAttachmentEnvironment(view, context: context)
     view.setParagraphContents(displayedContents, lineSpacing: lineSpacing, animatedByWord: false)
     view.setTextContextMenu(config.resolvedTextContextMenu)
     view.setMarkdownController(markdownController)
@@ -59,6 +67,7 @@ struct ParagraphView: UIViewRepresentable {
     // A retained paragraph must use its current SwiftUI presenter's action,
     // including after the host changes while the native text view stays mounted.
     view.onUrlTap = openURL.callAsFunction(_:)
+    configureAttachmentEnvironment(view, context: context)
     let displayed = displayedContents
     let shouldAnimate = view.window != nil && config.shouldAnimateText // only animate when visible
     view.setParagraphContents(displayed, lineSpacing: lineSpacing, animatedByWord: shouldAnimate)
@@ -77,6 +86,7 @@ struct ParagraphView: UIViewRepresentable {
     view.onSelectionChanged = nil
     view.onLongPressPreview = nil
     view.setMarkdownController(nil)
+    view.setAttachmentEnvironment(nil)
     view.setTextContextMenu(nil)
     view.onUrlTap = { _ in }
   }
@@ -99,7 +109,11 @@ struct ParagraphView: UIViewRepresentable {
     let cacheKey = (width * 10).rounded() / 10 // Round to 1 decimal place
 
     // Check if we have a cached size for this width
-    if let cachedSize = context.coordinator.sizeCache[cacheKey] {
+    var hasRichAttachments = false
+    contents.enumerateAttribute(.attachment, in: NSRange(location: 0, length: contents.length)) { value, _, stop in
+      if value is MarkdownRichBlockAttachment { hasRichAttachments = true; stop.pointee = true }
+    }
+    if !hasRichAttachments, let cachedSize = context.coordinator.sizeCache[cacheKey] {
       return cachedSize
     }
 
@@ -121,8 +135,23 @@ struct ParagraphView: UIViewRepresentable {
     var isApplyingSelectAll = false
   }
 
+  private func configureAttachmentEnvironment(_ view: ParagraphUIView, context: Context) {
+    // Explicit reads subscribe the retained native view to changes even when
+    // an embedded program updates without changing its atomic text position.
+    var values = context.environment
+    values.markdownEmbeddedBlockRenderer = embeddedBlockRenderer
+    values.markdownCodeBlockRenderer = codeBlockRenderer
+    values.markdownCodeBlockFenceClosure = fenceClosure
+    values.colorScheme = colorScheme
+    values.locale = locale
+    values.layoutDirection = layoutDirection
+    values.dynamicTypeSize = dynamicTypeSize
+    view.setAttachmentEnvironment(values)
+  }
+
   private func configureSelection(_ view: ParagraphUIView, coordinator: Coordinator) {
     view.isScrollEnabled = scrolls
+    view.usesEnclosingDocumentSelection = view.attachmentEnvironment?.markdownIsRichAttachment ?? false
     view.textContainerInset = scrolls ? UIEdgeInsets(top: 20, left: 20, bottom: 20, right: 20) : .zero
     view.onSelectionChanged = selectionChanged
     view.onLongPressPreview = scrolls ? nil : longPressPreview

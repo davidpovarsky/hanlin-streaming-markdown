@@ -32,6 +32,53 @@ class ParagraphUIView: UITextView {
       if (oldValue != nil) != enabled { configureAccessibility(for: attributedText) }
     }
   }
+  /// A rich attachment has one atomic position in the enclosing document.
+  /// Its inner text keeps links, but never becomes a competing selection owner.
+  var usesEnclosingDocumentSelection = false {
+    didSet {
+      isSelectable = !usesEnclosingDocumentSelection
+      embeddedLinkRecognizer.isEnabled = usesEnclosingDocumentSelection
+      if oldValue != usesEnclosingDocumentSelection { configureAccessibility(for: attributedText) }
+    }
+  }
+  private lazy var embeddedLinkDelegate = MarkdownEmbeddedLinkGestureDelegate(textView: self)
+  private lazy var embeddedLinkRecognizer: UITapGestureRecognizer = {
+    let recognizer = UITapGestureRecognizer(target: self, action: #selector(openEmbeddedLink(_:)))
+    recognizer.delegate = embeddedLinkDelegate
+    recognizer.isEnabled = false
+    addGestureRecognizer(recognizer)
+    return recognizer
+  }()
+
+  @objc private func openEmbeddedLink(_ recognizer: UITapGestureRecognizer) {
+    guard recognizer.state == .ended, let url = embeddedLink(at: recognizer.location(in: self)) else { return }
+    onUrlTap(url)
+  }
+
+  /// UITextInput geometry is public and respects RTL, text insets and scrolling.
+  /// The nearest insertion position alone is insufficient: a blank-area tap
+  /// must not activate whichever link happens to be closest.
+  fileprivate func embeddedLink(at point: CGPoint) -> URL? {
+    guard usesEnclosingDocumentSelection, let nearest = closestPosition(to: point) else { return nil }
+    let offset = self.offset(from: beginningOfDocument, to: nearest)
+    for index in [offset, offset - 1] where index >= 0 && index < textStorage.length {
+      let character = (textStorage.string as NSString).rangeOfComposedCharacterSequence(at: index)
+      guard let start = position(from: beginningOfDocument, offset: character.location),
+            let end = position(from: start, offset: character.length), let range = textRange(from: start, to: end),
+            firstRect(for: range).insetBy(dx: -2, dy: -2).contains(point) else { continue }
+      let attributes = textStorage.attributes(at: character.location, effectiveRange: nil)
+      if let citation = (attributes[.attachment] as? InlineCitationAttachment)?.citationData { return citation.url }
+      if let url = Self.linkURL(attributes[.link]) { return url }
+    }
+    return nil
+  }
+
+  private static func linkURL(_ value: Any?) -> URL? {
+    if let url = value as? URL { return url }
+    if let string = value as? String { return URL(string: string) }
+    return nil
+  }
+
   private lazy var previewDelegate = MarkdownPreviewGestureDelegate(textView: self)
   private lazy var previewRecognizer: UILongPressGestureRecognizer = {
     let recognizer = UILongPressGestureRecognizer(target: self, action: #selector(showMessagePreview(_:)))
@@ -68,6 +115,49 @@ class ParagraphUIView: UITextView {
   private var activeAnimations: [FadeAnimationData] = []
   private var fadeAnimationDisplayLink: CADisplayLink?
   private var cachedSize: CachedParagraphUIViewSize?
+
+  private(set) var attachmentEnvironment: EnvironmentValues?
+  private let attachmentProviders = NSHashTable<MarkdownRichBlockViewProvider>.weakObjects()
+
+  func setAttachmentEnvironment(_ environment: EnvironmentValues?) {
+    attachmentEnvironment = environment
+    for provider in attachmentProviders.allObjects { provider.refreshEnvironment() }
+  }
+
+  func registerAttachmentProvider(_ provider: MarkdownRichBlockViewProvider) {
+    attachmentProviders.add(provider)
+  }
+
+  func attachmentSizeDidChange() {
+    invalidateCachedSize()
+    invalidateIntrinsicContentSize()
+    setNeedsLayout()
+  }
+
+  /// Materialize owners only for the changed tail. Canonical attributes remain
+  /// untouched, so equality/tail planning never compares live hosting objects.
+  private func ownedAttachments(in content: NSAttributedString) -> NSAttributedString {
+    let result = NSMutableAttributedString(attributedString: content)
+    content.enumerateAttribute(.attachment, in: NSRange(location: 0, length: content.length)) { value, range, _ in
+      guard let attachment = value as? MarkdownRichBlockAttachment else { return }
+      result.addAttribute(.attachment, value: attachment.owned(by: self), range: range)
+    }
+    return result
+  }
+
+  override func copy(_ sender: Any?) {
+    // Copy the exact textual payload of selected rich blocks, not U+FFFC.
+    let range = NSIntersectionRange(selectedRange, NSRange(location: 0, length: textStorage.length))
+    guard range.length > 0 else { return }
+    var containsRichBlock = false
+    textStorage.enumerateAttribute(.attachment, in: range) { value, _, stop in
+      if value is MarkdownRichBlockAttachment { containsRichBlock = true; stop.pointee = true }
+    }
+    if containsRichBlock {
+      UIPasteboard.general.string = MarkdownTextSelection(attributedText: textStorage,
+        selectedRange: range, sourceBlockID: sourceBlockID).text
+    } else { super.copy(sender) }
+  }
 
   var textContextMenu: TextContextMenu?
   var markdownController: MarkdownController?
@@ -175,7 +265,7 @@ class ParagraphUIView: UITextView {
     isApplyingContents = true
     textStorage.beginEditing()
     textStorage.replaceCharacters(in: edit.replacedRange,
-      with: finalString.attributedSubstring(from: edit.replacementRange))
+      with: ownedAttachments(in: finalString.attributedSubstring(from: edit.replacementRange)))
     textStorage.endEditing()
     appliedContents = finalString
     // Appending a stream must not dismiss or move an existing native selection.
@@ -247,6 +337,11 @@ class ParagraphUIView: UITextView {
       NSTextAttachment.registerViewProviderClass(LatexViewProvider.self, forFileType: UTType.data.identifier)
     }
 
+    if NSTextAttachment.textAttachmentViewProviderClass(forFileType: MarkdownRichBlockAttachment.contentType) == nil {
+      NSTextAttachment.registerViewProviderClass(MarkdownRichBlockViewProvider.self,
+        forFileType: MarkdownRichBlockAttachment.contentType)
+    }
+
     isEditable = false
     isSelectable = true
     isScrollEnabled = false
@@ -289,6 +384,7 @@ class ParagraphUIView: UITextView {
   private func generateAccessibilityContent(from attributedString: NSAttributedString) -> AccessibilityContent? {
     var labelComponents: [String] = []
     var actions: [UIAccessibilityCustomAction] = []
+    var hasRichContent = false
     let fullRange = NSRange(location: 0, length: attributedString.length)
 
     attributedString.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
@@ -302,12 +398,18 @@ class ParagraphUIView: UITextView {
         let actionName = String.openCitation(citationLabel: citationData.accessibilityLabel)
         let action = makeAccessibilityAction(name: actionName, url: citationData.url)
         actions.append(action)
+      } else if let attachment = attrs[.attachment] as? MarkdownRichBlockAttachment {
+        hasRichContent = true
+        labelComponents.append(attachment.selectionText)
       } else {
         // Add the regular text for this range
         let substring = attributedString.attributedSubstring(from: range)
         let text = substring.string
         if !text.isEmpty {
           labelComponents.append(text)
+          if usesEnclosingDocumentSelection, let url = Self.linkURL(attrs[.link]) {
+            actions.append(makeAccessibilityAction(name: text, url: url))
+          }
         }
       }
     }
@@ -315,7 +417,7 @@ class ParagraphUIView: UITextView {
     let accessibilityLabel = labelComponents.isEmpty ? nil : labelComponents.joined()
 
     // Return nil if no attachments were found
-    guard !actions.isEmpty else { return nil }
+    guard !actions.isEmpty || hasRichContent else { return nil }
 
     return AccessibilityContent(label: accessibilityLabel, actions: actions)
   }
@@ -490,6 +592,17 @@ extension ParagraphUIView: UITextViewDelegate {
   }
 }
 
+/// Only a precise link/citation tap is consumed by an inner rich text leaf.
+/// All other touches remain available to the enclosing document and controls.
+private final class MarkdownEmbeddedLinkGestureDelegate: NSObject, UIGestureRecognizerDelegate {
+  weak var textView: ParagraphUIView?
+  init(textView: ParagraphUIView) { self.textView = textView }
+  func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    guard let textView else { return false }
+    return textView.embeddedLink(at: gestureRecognizer.location(in: textView)) != nil
+  }
+}
+
 /// Public gesture arbitration only. A selection already in progress (including
 /// a handle drag) can never become a message preview. A new stationary hold can
 /// coexist with UIKit's initial word selection; moving >10pt cancels the preview.
@@ -500,6 +613,11 @@ private final class MarkdownPreviewGestureDelegate: NSObject, UIGestureRecognize
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
     guard let view = textView, view.onLongPressPreview != nil,
           !(view.isFirstResponder && view.selectedRange.length > 0) else { return false }
+    var touched = touch.view
+    while let current = touched, current !== view {
+      if current is MarkdownRichBlockHostView || current is UIControl { return false }
+      touched = current.superview
+    }
     let point = touch.location(in: view)
     if let position = view.closestPosition(to: point) {
       let index = view.offset(from: view.beginningOfDocument, to: position)

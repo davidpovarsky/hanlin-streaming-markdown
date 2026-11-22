@@ -35,18 +35,27 @@ public struct MarkdownTextSelection: Sendable {
       self.range = range
       self.renderedText = attributedText.string
     }
-    let selected = attributedText.attributedSubstring(from: range)
-    var text = ""
-    selected.enumerateAttributes(in: NSRange(location: 0, length: selected.length)) { attributes, range, _ in
-      if let attachment = attributes[.attachment] as? NSTextAttachment,
-         let contents = attachment.contents,
-         let math = try? JSONDecoder().decode(LatexAttachmentData.self, from: contents) {
-        text += "\\(" + math.latex + "\\)"
-      } else {
-        text += selected.attributedSubstring(from: range).string
-      }
-    }
-    self.text = text
+    self.text = Self.expandedText(attributedText, range: range)
   }
+
+  static func expandedText(_ contents: NSAttributedString, range: NSRange? = nil) -> String {
+    let selectedRange = range ?? NSRange(location: 0, length: contents.length)
+    var replacements: [MarkdownSelectionText.Replacement] = []
+    contents.enumerateAttribute(.attachment, in: selectedRange) { value, span, _ in
+      let text: String?
+      if let attachment = value as? MarkdownRichBlockAttachment {
+        text = attachment.selectionText
+      } else if let attachment = value as? InlineCitationAttachment, let citation = attachment.citationData {
+        text = citation.title
+      } else if let attachment = value as? NSTextAttachment,
+                let data = attachment.contents,
+                let math = try? JSONDecoder().decode(LatexAttachmentData.self, from: data) {
+        text = "\\(" + math.latex + "\\)"
+      } else { text = nil }
+      if let text { replacements.append(.init(range: span, text: text)) }
+    }
+    return MarkdownSelectionText.expand(contents.string, range: selectedRange, replacements: replacements)
+  }
+
   #endif
 }

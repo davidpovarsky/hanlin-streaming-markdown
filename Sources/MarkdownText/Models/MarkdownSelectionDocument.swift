@@ -11,32 +11,28 @@ enum MarkdownSelectionDocument {
 
   static func build(_ blocks: [MarkdownRenderable], config: MarkdownRenderConfig)
     -> (groups: [MarkdownRenderable], document: MarkdownRenderable) {
-    var groups: [MarkdownRenderable] = []
-    var pending = NSMutableAttributedString(string: "")
-    var firstID: String?
+    let inline = NSMutableAttributedString(string: "")
     let document = NSMutableAttributedString(string: "")
-
-    func flush() {
-      guard let id = firstID else { return }
-      groups.append(.paragraph(id: "hanlin-continuous:\(id)", content: pending))
-      pending = NSMutableAttributedString(string: "")
-      firstID = nil
-    }
-
     for block in blocks {
       if let prose = prose(block, config: config) {
-        if firstID == nil { firstID = block.id }
-        append(prose, to: pending, spacing: config.blockSpacing)
+        append(prose, to: inline, spacing: config.blockSpacing)
         append(prose, to: document, spacing: config.blockSpacing)
       } else {
-        flush()
-        groups.append(block)
-        if let content = selectionContent(block, config: config) {
-          append(content, to: document, spacing: config.blockSpacing)
-        }
+        // Rich content occupies one native position, not a second UITextView.
+        // The original renderer is hosted by TextKit's public view provider.
+        let expanded = selectionContent(block, config: config)
+        let attachment = MarkdownRichBlockAttachment(block: block, selectionText: expanded.map { MarkdownTextSelection.expandedText($0) } ?? "")
+        let content = NSMutableAttributedString(attachment: attachment)
+        content.addAttributes([.font: config.paragraphStyle.textFonts.normal,
+          sourceBlockKey: block.id], range: NSRange(location: 0, length: content.length))
+        append(content, to: inline, spacing: config.blockSpacing)
+        if let expanded { append(expanded, to: document, spacing: config.blockSpacing) }
       }
     }
-    flush()
+    let groups: [MarkdownRenderable]
+    if let first = blocks.first, inline.length > 0 {
+      groups = [.paragraph(id: "hanlin-continuous:\(first.id)", content: inline)]
+    } else { groups = [] }
     return (groups, .paragraph(id: documentID, content: document))
   }
 
@@ -139,7 +135,8 @@ enum MarkdownSelectionDocument {
       }
       return marked(result, id: block.id)
     case .image(_, let image): content = image.alt
-    case .thematicBreak: content = "—"
+    case .thematicBreak: content = ""
+    case .embedded(_, let text): content = text
     case .orderedList(_, let items), .unorderedList(_, let items, _):
       let result = NSMutableAttributedString(string: "")
       for item in items {

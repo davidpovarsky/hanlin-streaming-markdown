@@ -46,6 +46,9 @@ indirect enum MarkdownRenderable: Identifiable, Equatable, @unchecked Sendable {
   /// `MarkdownRenderConfig.imageConfig`.
   case image(id: String, data: ImageData)
 
+  /// A host-supplied rich view at one selectable document position.
+  case embedded(id: String, selectionText: String)
+
   var id: String {
     switch self {
     case .paragraph(let id, _): return id
@@ -58,6 +61,7 @@ indirect enum MarkdownRenderable: Identifiable, Equatable, @unchecked Sendable {
     case .thematicBreak(let id): return id
     case .blockQuote(let id, _): return id
     case .image(let id, _): return id
+    case .embedded(let id, _): return id
     }
   }
 

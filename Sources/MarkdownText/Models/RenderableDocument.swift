@@ -43,8 +43,13 @@ public struct RenderableDocument: Equatable, Sendable {
 
   init(document: Markdown.Document, config: MarkdownRenderConfig, sourceText: String?) async {
     let blocks = document.convert(with: config)
+    self.init(renderables: blocks,
+      fenceClosure: sourceText.map { Self.fenceClosure(in: document, source: $0) } ?? [:], config: config)
+  }
+
+  init(renderables blocks: [MarkdownRenderable], fenceClosure: [String: Bool], config: MarkdownRenderConfig) {
     self.renderables = blocks
-    self.codeBlockFenceClosure = sourceText.map { Self.fenceClosure(in: document, source: $0) } ?? [:]
+    self.codeBlockFenceClosure = fenceClosure
     #if canImport(UIKit)
     if config.textSelectionConfig.continuousSelection {
       let selection = MarkdownSelectionDocument.build(blocks, config: config)
@@ -123,6 +128,8 @@ extension MarkdownRenderable {
       return ([headerLine] + rowLines).joined(separator: "\n")
     case .blockQuote(_, let item):
       return item.quoteType.plainText
+    case .embedded(_, let text):
+      return text.isEmpty ? nil : text
     case .thematicBreak:
       return nil
     case .image(_, let data):

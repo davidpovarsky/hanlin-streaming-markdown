@@ -14,6 +14,7 @@ public struct MarkdownView: View {
 
   private let text: String
   private let config: MarkdownRenderConfig
+  private let documentParts: [MarkdownDocumentPart]?
   @StateObject var controller: MarkdownViewController
 
   /// Create a `MarkdownView`.
@@ -24,9 +25,11 @@ public struct MarkdownView: View {
   public init(
     text: String,
     config: MarkdownRenderConfig = .default,
-    listener: MarkdownListener? = nil
+    listener: MarkdownListener? = nil,
+    documentParts: [MarkdownDocumentPart]? = nil
   ) {
     self.text = text
+    self.documentParts = documentParts
     self.config = config
     _controller = StateObject(wrappedValue: MarkdownViewController(config: config, listener: listener))
   }
@@ -39,14 +42,15 @@ public struct MarkdownView: View {
         DocumentView(renderableDocument: .empty, config: config, listener: controller.listener)
       }
     }
-    .task(id: ParseKey(text: text, config: config)) {
-      await controller.parse(text: text, config: config)
+    .task(id: ParseKey(text: text, config: config, documentParts: documentParts)) {
+      await controller.parse(text: text, config: config, documentParts: documentParts)
     }
   }
 
   private struct ParseKey: Hashable {
     let text: String
     let config: MarkdownRenderConfig
+    let documentParts: [MarkdownDocumentPart]?
   }
 }
 
@@ -55,6 +59,7 @@ final class MarkdownViewController: ObservableObject {
   @Published var renderable: RenderableDocument?
 
   private let parser = MarkdownParserImpl()
+  private let documentParser = MarkdownDocumentParser()
 
   let listener: MarkdownListener?
 
@@ -62,8 +67,13 @@ final class MarkdownViewController: ObservableObject {
     self.listener = listener
   }
 
-  func parse(text: String, config: MarkdownRenderConfig) async {
-    let renderable = await parser.parse(text: text, config: config)
+  func parse(text: String, config: MarkdownRenderConfig, documentParts: [MarkdownDocumentPart]? = nil) async {
+    let renderable: RenderableDocument
+    if let documentParts {
+      renderable = await documentParser.parse(parts: documentParts, config: config)
+    } else {
+      renderable = await parser.parse(text: text, config: config)
+    }
     await MainActor.run {
       guard !Task.isCancelled else { return }
       self.renderable = renderable

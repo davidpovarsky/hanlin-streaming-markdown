@@ -30,6 +30,7 @@ struct SingleBlockView: View {
   @Environment(\.markdownConfig) var config: MarkdownRenderConfig
   @Environment(\.markdownCodeBlockRenderer) var codeBlockRenderer: MarkdownCodeBlockRenderer?
   @Environment(\.markdownCodeBlockFenceClosure) var fenceClosure: [String: Bool]
+  @Environment(\.markdownEmbeddedBlockRenderer) var embeddedRenderer
 
   let renderable: MarkdownRenderable
 
@@ -76,6 +77,8 @@ struct SingleBlockView: View {
       case .image(let id, let data):
         BlockImageView(data: data)
           .id(id)
+      case .embedded(let id, _):
+        if let content = embeddedRenderer?(id) { content }
       }
     }
     .environment(\.markdownSelectionBlockID, renderable.id)

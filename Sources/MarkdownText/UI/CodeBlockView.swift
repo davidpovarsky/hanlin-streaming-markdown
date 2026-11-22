@@ -11,6 +11,7 @@ struct CodeBlockView: View {
 
   @Environment(\.markdownConfig) private var config: MarkdownRenderConfig
   @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.markdownIsRichAttachment) private var isRichAttachment
 
   let language: String
   let code: String
@@ -48,14 +49,14 @@ struct CodeBlockView: View {
         if #available(iOS 16.1, *) {  // Minimum version for HighlightSwift
           Text(attributedString ?? AttributedString(code))
             .font(config.codeBlockConfig.codeTextFonts)
-            .textSelection(.enabled)
+            .modifier(CodeTextSelection(enabled: !isRichAttachment))
             .fixedSize(horizontal: true, vertical: false)
             .transition(.opacity)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
           Text(code)
             .font(config.codeBlockConfig.codeTextFonts)
-            .textSelection(.enabled)
+            .modifier(CodeTextSelection(enabled: !isRichAttachment))
             .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(Color.Theme.Component.CodeBlock.Foreground.FunctionParameter)
             .transition(.opacity)
@@ -169,3 +170,12 @@ struct CodeBlockView: View {
 }
 
 #endif
+
+
+private struct CodeTextSelection: ViewModifier {
+  let enabled: Bool
+  @ViewBuilder func body(content: Content) -> some View {
+    if enabled { content.textSelection(.enabled) }
+    else { content.textSelection(.disabled) }
+  }
+}
