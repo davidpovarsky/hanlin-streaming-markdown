@@ -142,9 +142,11 @@ final class MarkdownRichBlockViewProvider: NSTextAttachmentViewProvider {
     Task { @MainActor [weak self] in
       guard let self else { return }
       self.invalidationScheduled = false
-      guard self.owner?.window != nil, self.owner?.attachmentEnvironment != nil else { return }
+      // A live text view can be measured before it enters a window. Teardown
+      // clears the environment; window presence must not discard fresh geometry.
+      guard let owner = self.owner, owner.attachmentEnvironment != nil else { return }
       self.textLayoutManager?.invalidateLayout(for: NSTextRange(location: self.location))
-      self.owner?.attachmentSizeDidChange()
+      owner.attachmentSizeDidChange()
     }
   }
 }
