@@ -17,10 +17,9 @@ final class MarkdownRichBlockAttachment: NSTextAttachment {
     self.block = block
     self.selectionText = selectionText
     self.isViewOwned = isViewOwned
-    // UIKit does not preserve the initializer's type for a nil data payload.
-    // This in-memory attachment still has an explicit rich-renderer identity.
-    super.init(data: nil, ofType: nil)
-    fileType = Self.contentType
+    // TextKit treats a nil payload or type as an attachment without document
+    // contents. Supply non-nil typed data; the rich block itself stays in memory.
+    super.init(data: Data(), ofType: Self.contentType)
     allowsTextAttachmentView = true
   }
 
