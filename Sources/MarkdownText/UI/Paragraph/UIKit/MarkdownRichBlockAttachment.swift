@@ -10,12 +10,17 @@ final class MarkdownRichBlockAttachment: NSTextAttachment {
   static let contentType = "com.hanlin.markdown.rich-block"
   let block: MarkdownRenderable
   let selectionText: String
+  private let isViewOwned: Bool
   @MainActor weak var owner: ParagraphUIView?
 
-  init(block: MarkdownRenderable, selectionText: String) {
+  init(block: MarkdownRenderable, selectionText: String, isViewOwned: Bool = false) {
     self.block = block
     self.selectionText = selectionText
-    super.init(data: nil, ofType: Self.contentType)
+    self.isViewOwned = isViewOwned
+    // UIKit does not preserve the initializer's type for a nil data payload.
+    // This in-memory attachment still has an explicit rich-renderer identity.
+    super.init(data: nil, ofType: nil)
+    fileType = Self.contentType
     allowsTextAttachmentView = true
   }
 
@@ -24,21 +29,29 @@ final class MarkdownRichBlockAttachment: NSTextAttachment {
   override func viewProvider(for parentView: UIView?, location: any NSTextLocation,
                              textContainer: NSTextContainer?) -> NSTextAttachmentViewProvider? {
     // This is an in-memory rich block, not an arbitrary attached file. Resolve
-    // its renderer directly: UIKit may already return a generic file provider
-    // for an unregistered UTI, and parser attachments predate their text view.
+    // its renderer directly instead of relying on file-type registry lookup,
+    // which can return no provider for attachments without document contents.
     MarkdownRichBlockViewProvider(textAttachment: self, parentView: parentView,
       textLayoutManager: textContainer?.textLayoutManager, location: location)
   }
 
   override func isEqual(_ object: Any?) -> Bool {
     guard let other = object as? MarkdownRichBlockAttachment else { return false }
+    // Attributed strings coalesce equal values. A mounted copy must never be
+    // replaced by the canonical attachment or a different text view's copy.
+    if isViewOwned || other.isViewOwned { return self === other }
     return block == other.block && selectionText == other.selectionText
   }
 
-  override var hash: Int { block.id.hashValue ^ selectionText.hashValue }
+  override var hash: Int {
+    // The ownership tag is immutable; releasing the weak owner cannot change
+    // the identity/hash of a value already stored in an attributed string.
+    if isViewOwned { return ObjectIdentifier(self).hashValue }
+    return block.id.hashValue ^ selectionText.hashValue
+  }
 
   @MainActor func owned(by owner: ParagraphUIView) -> MarkdownRichBlockAttachment {
-    let copy = MarkdownRichBlockAttachment(block: block, selectionText: selectionText)
+    let copy = MarkdownRichBlockAttachment(block: block, selectionText: selectionText, isViewOwned: true)
     copy.owner = owner
     return copy
   }
