@@ -13,6 +13,10 @@ public struct TextSelectionConfig: Hashable, Sendable {
   /// Defaults to `true`.
   public let isEnabled: Bool
 
+  /// Join adjacent prose into one native selection range. Rich blocks retain
+  /// their existing renderers; document-selection mode also includes their text.
+  public let continuousSelection: Bool
+
   /// Background color of the text selection modal. `nil` falls back to the
   /// bundled chat page background.
   public let backgroundColor: Color?
@@ -24,10 +28,12 @@ public struct TextSelectionConfig: Hashable, Sendable {
   ///     chat page background).
   public init(
     isEnabled: Bool = true,
-    backgroundColor: Color? = nil
+    backgroundColor: Color? = nil,
+    continuousSelection: Bool = false
   ) {
     self.isEnabled = isEnabled
     self.backgroundColor = backgroundColor
+    self.continuousSelection = continuousSelection
   }
 
   /// The default text selection configuration, which uses the bundled chat

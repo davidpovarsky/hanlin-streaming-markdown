@@ -14,6 +14,9 @@ import SwiftUI
 @Equatable
 public struct DocumentView: View {
   @StateObject var controller: MarkdownController
+  #if canImport(UIKit)
+  @Environment(\.markdownDocumentSelectionMode) private var documentSelectionMode
+  #endif
 
   let renderableDocument: RenderableDocument
   let config: MarkdownRenderConfig
@@ -34,7 +37,7 @@ public struct DocumentView: View {
   }
 
   public var body: some View {
-    BlockView(renderables: renderableDocument.renderables)
+    documentContent
     .environment(\.markdownConfig, config)
     .environment(\.markdownCodeBlockFenceClosure, renderableDocument.codeBlockFenceClosure)
     .environment(\.markdownController, controller)
@@ -57,6 +60,26 @@ public struct DocumentView: View {
         controller.isTextSelectionRequested = false
       }
     }
+  }
+
+  @ViewBuilder private var documentContent: some View {
+    #if canImport(UIKit)
+    if case .paragraph(let id, let contents)? = renderableDocument.selectionDocument {
+      if documentSelectionMode {
+        ParagraphView(contents: contents, scrolls: true)
+          .environment(\.markdownSelectionBlockID, id)
+          .environment(\.markdownLongPressPreview, nil)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else {
+        BlockView(renderables: renderableDocument.selectionRenderables ?? renderableDocument.renderables)
+          .environment(\.markdownSelectionDocument, contents)
+      }
+    } else {
+      BlockView(renderables: renderableDocument.renderables)
+    }
+    #else
+    BlockView(renderables: renderableDocument.renderables)
+    #endif
   }
 }
 

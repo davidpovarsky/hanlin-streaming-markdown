@@ -24,6 +24,34 @@ class ParagraphUIView: UITextView {
   var onSelectionActivity: (@MainActor @Sendable (UUID, Bool) -> Void)?
   var sourceBlockID: String?
   private var isApplyingContents = false
+  var onSelectionChanged: (@MainActor (MarkdownTextSelection) -> Void)?
+  var onLongPressPreview: (@MainActor (UIView, CGPoint) -> Void)? {
+    didSet {
+      let enabled = onLongPressPreview != nil
+      if previewRecognizer.isEnabled != enabled { previewRecognizer.isEnabled = enabled }
+      if (oldValue != nil) != enabled { configureAccessibility(for: attributedText) }
+    }
+  }
+  private lazy var previewDelegate = MarkdownPreviewGestureDelegate(textView: self)
+  private lazy var previewRecognizer: UILongPressGestureRecognizer = {
+    let recognizer = UILongPressGestureRecognizer(target: self, action: #selector(showMessagePreview(_:)))
+    recognizer.minimumPressDuration = 1.0
+    recognizer.allowableMovement = 10
+    recognizer.cancelsTouchesInView = false
+    recognizer.delaysTouchesBegan = false
+    recognizer.delaysTouchesEnded = false
+    recognizer.delegate = previewDelegate
+    recognizer.isEnabled = false
+    addGestureRecognizer(recognizer)
+    return recognizer
+  }()
+
+  @objc private func showMessagePreview(_ recognizer: UILongPressGestureRecognizer) {
+    guard recognizer.state == .began, window != nil, let action = onLongPressPreview else { return }
+    let location = recognizer.location(in: self)
+    resignFirstResponder()
+    action(self, location)
+  }
 
   override func becomeFirstResponder() -> Bool {
     let accepted = super.becomeFirstResponder()
@@ -35,6 +63,7 @@ class ParagraphUIView: UITextView {
   static let animationDuration: CFTimeInterval = ParagraphAnimationConstants.fadeInDuration
 
   private(set) var paragraphContents: NSMutableAttributedString = NSMutableAttributedString()
+  private var appliedContents: NSAttributedString = NSAttributedString(string: "")
   private(set) var lineSpacing: CGFloat?
   private var activeAnimations: [FadeAnimationData] = []
   private var fadeAnimationDisplayLink: CADisplayLink?
@@ -88,6 +117,7 @@ class ParagraphUIView: UITextView {
   }
 
   override var intrinsicContentSize: CGSize {
+    if isScrollEnabled { return CGSize(width: UIView.noIntrinsicMetric, height: UIView.noIntrinsicMetric) }
     if let cachedSize {
       return cachedSize.size
     }
@@ -122,7 +152,8 @@ class ParagraphUIView: UITextView {
     self.paragraphContents = newContents
     self.lineSpacing = lineSpacing
 
-    let oldAttributedString: NSAttributedString = attributedText
+    let oldAttributedString = appliedContents
+    let oldContentLength = oldAttributedString.length
     let previousSelection = selectedRange
     let wasSelecting = isFirstResponder && previousSelection.length > 0
     let finalString: NSMutableAttributedString
@@ -138,17 +169,18 @@ class ParagraphUIView: UITextView {
 
     // Stop display link update before updating the attributed string
     tearDownDisplayLink()
+    finishPendingAnimations(using: oldAttributedString)
     invalidateCachedSize()
+    let edit = NativeTextEditPlan(old: oldAttributedString, new: finalString)
     isApplyingContents = true
-    attributedText = finalString
+    textStorage.beginEditing()
+    textStorage.replaceCharacters(in: edit.replacedRange,
+      with: finalString.attributedSubstring(from: edit.replacementRange))
+    textStorage.endEditing()
+    appliedContents = finalString
     // Appending a stream must not dismiss or move an existing native selection.
     // If a speculative rewrite changes that prefix, UIKit establishes a new selection.
-    if wasSelecting,
-       previousSelection.location != NSNotFound,
-       NSMaxRange(previousSelection) <= finalString.length,
-       NSMaxRange(previousSelection) <= oldAttributedString.length,
-       (finalString.string as NSString).substring(to: NSMaxRange(previousSelection)) ==
-         (oldAttributedString.string as NSString).substring(to: NSMaxRange(previousSelection)) {
+    if wasSelecting, edit.preserves(previousSelection) {
       selectedRange = previousSelection
     }
 
@@ -158,12 +190,12 @@ class ParagraphUIView: UITextView {
 
     invalidateIntrinsicContentSize()
 
-    let newContentLength = attributedText.length - oldAttributedString.length
+    let newContentLength = finalString.length - oldContentLength
 
     if animatedByWord,
        newContentLength > 0 {
       // Animate word by word
-      let newContentRange = NSRange(location: oldAttributedString.length, length: newContentLength)
+      let newContentRange = NSRange(location: oldContentLength, length: newContentLength)
       let wordRanges = attributedText.splitIntoWords(withIn: newContentRange)
       let wordCount = wordRanges.count
       let delayBetweenWords: Double = ParagraphAnimationConstants.delayBetweenWordsRatio / Double(wordCount)
@@ -196,6 +228,19 @@ class ParagraphUIView: UITextView {
     return result
   }
 
+  private func finishPendingAnimations(using canonical: NSAttributedString) {
+    guard !activeAnimations.isEmpty else { return }
+    textStorage.beginEditing()
+    for animation in activeAnimations where NSMaxRange(animation.range) <= canonical.length {
+      canonical.enumerateAttribute(.foregroundColor, in: animation.range) { value, range, _ in
+        if let value { self.textStorage.addAttribute(.foregroundColor, value: value, range: range) }
+        else { self.textStorage.removeAttribute(.foregroundColor, range: range) }
+      }
+    }
+    textStorage.endEditing()
+    activeAnimations.removeAll()
+  }
+
   private func setupView() {
     // Only register if not already registered to prevent conflicts
     if NSTextAttachment.textAttachmentViewProviderClass(forFileType: UTType.data.identifier) == nil {
@@ -220,7 +265,7 @@ class ParagraphUIView: UITextView {
     textContainerInset = .zero
     textContainer.lineFragmentPadding = 0
     textContainer.widthTracksTextView = true
-    textContainer.heightTracksTextView = true
+    textContainer.heightTracksTextView = false
     textContainer.maximumNumberOfLines = 0
     textContainer.lineBreakMode = .byWordWrapping
 
@@ -280,12 +325,21 @@ class ParagraphUIView: UITextView {
     // Generate the full accessibility content directly
     if let accessibilityContent = generateAccessibilityContent(from: attributedString) {
       // We have citations, use the generated content
+      accessibilityAttributedLabel = nil
       accessibilityLabel = accessibilityContent.label
       accessibilityCustomActions = accessibilityContent.actions
     } else {
       // No citations found, just use the plain text
-      accessibilityLabel = attributedString.string
+      accessibilityAttributedLabel = attributedString
       accessibilityCustomActions = nil
+    }
+    if onLongPressPreview != nil {
+      let action = UIAccessibilityCustomAction(name: NSLocalizedString("Message actions", comment: "Long-hold message preview and actions")) { [weak self] _ in
+        guard let self, self.window != nil, let preview = self.onLongPressPreview else { return false }
+        preview(self, CGPoint(x: self.bounds.midX, y: self.bounds.midY))
+        return true
+      }
+      accessibilityCustomActions = (accessibilityCustomActions ?? []) + [action]
     }
   }
 
@@ -377,10 +431,17 @@ extension ParagraphUIView: UITextViewDelegate {
       Task { @MainActor [weak self] in
         guard let self else { return }
         self.onSelectionActivity?(self.selectionActivityID, self.isFirstResponder && self.selectedRange.length > 0)
+        self.publishSelection()
       }
     } else {
       onSelectionActivity?(selectionActivityID, isFirstResponder && selectedRange.length > 0)
+      publishSelection()
     }
+  }
+
+  private func publishSelection() {
+    onSelectionChanged?(MarkdownTextSelection(attributedText: attributedText,
+      selectedRange: isFirstResponder ? selectedRange : NSRange(location: 0, length: 0), sourceBlockID: sourceBlockID))
   }
 
   func textViewDidChangeSelection(_ textView: UITextView) {
@@ -426,6 +487,30 @@ extension ParagraphUIView: UITextViewDelegate {
         markdownController.onContextMenuAppear(id: item.id, selectedContent: selectedText)
       }
     }
+  }
+}
+
+/// Public gesture arbitration only. A selection already in progress (including
+/// a handle drag) can never become a message preview. A new stationary hold can
+/// coexist with UIKit's initial word selection; moving >10pt cancels the preview.
+private final class MarkdownPreviewGestureDelegate: NSObject, UIGestureRecognizerDelegate {
+  weak var textView: ParagraphUIView?
+  init(textView: ParagraphUIView) { self.textView = textView }
+
+  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    guard let view = textView, view.onLongPressPreview != nil,
+          !(view.isFirstResponder && view.selectedRange.length > 0) else { return false }
+    let point = touch.location(in: view)
+    if let position = view.closestPosition(to: point) {
+      let index = view.offset(from: view.beginningOfDocument, to: position)
+      if index >= 0, index < view.attributedText.length,
+         view.attributedText.attribute(.link, at: index, effectiveRange: nil) != nil { return false }
+    }
+    return true
+  }
+
+  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+    true
   }
 }
 

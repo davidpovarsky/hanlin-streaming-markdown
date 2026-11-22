@@ -18,6 +18,8 @@ import AppKit
 public struct RenderableDocument: Equatable, Sendable {
   let renderables: [MarkdownRenderable]
   let codeBlockFenceClosure: [String: Bool]
+  let selectionRenderables: [MarkdownRenderable]?
+  let selectionDocument: MarkdownRenderable?
 
   var containsCodeBlock: Bool {
     return renderables.contains(where: { $0.isCodeBlock })
@@ -40,8 +42,22 @@ public struct RenderableDocument: Equatable, Sendable {
   }
 
   init(document: Markdown.Document, config: MarkdownRenderConfig, sourceText: String?) async {
-    self.renderables = document.convert(with: config)
+    let blocks = document.convert(with: config)
+    self.renderables = blocks
     self.codeBlockFenceClosure = sourceText.map { Self.fenceClosure(in: document, source: $0) } ?? [:]
+    #if canImport(UIKit)
+    if config.textSelectionConfig.continuousSelection {
+      let selection = MarkdownSelectionDocument.build(blocks, config: config)
+      self.selectionRenderables = selection.groups
+      self.selectionDocument = selection.document
+    } else {
+      self.selectionRenderables = nil
+      self.selectionDocument = nil
+    }
+    #else
+    self.selectionRenderables = nil
+    self.selectionDocument = nil
+    #endif
   }
 
   /// Construct a renderable wrapping a single plain-text paragraph styled
@@ -62,6 +78,8 @@ public struct RenderableDocument: Equatable, Sendable {
   init(renderables: [MarkdownRenderable]) {
     self.renderables = renderables
     self.codeBlockFenceClosure = [:]
+    self.selectionRenderables = nil
+    self.selectionDocument = nil
   }
 
   /// An empty document, equivalent to `RenderableDocument(plainText: "", …)`

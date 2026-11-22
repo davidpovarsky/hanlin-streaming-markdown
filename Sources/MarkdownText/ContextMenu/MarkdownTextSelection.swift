@@ -16,12 +16,25 @@ public struct MarkdownTextSelection: Sendable {
 
   #if canImport(UIKit)
   public init(attributedText: NSAttributedString, selectedRange: NSRange, sourceBlockID: String? = nil) {
-    self.sourceBlockID = sourceBlockID
     let location = selectedRange.location == NSNotFound ? 0 : min(max(0, selectedRange.location), attributedText.length)
     let clamped = NSRange(location: location, length: min(max(0, selectedRange.length), attributedText.length - location))
     let range = clamped.length == 0 ? clamped : (attributedText.string as NSString).rangeOfComposedCharacterSequences(for: clamped)
-    self.range = range
-    self.renderedText = attributedText.string
+    // A quote contained in one original block keeps its established source ID
+    // and local offsets. A quote crossing blocks uses the joined document range.
+    var sourceRange = NSRange(location: 0, length: attributedText.length)
+    let block = range.length > 0 ? attributedText.attribute(
+      MarkdownSelectionDocument.sourceBlockKey, at: range.location,
+      longestEffectiveRange: &sourceRange, in: NSRange(location: 0, length: attributedText.length)
+    ) as? String : nil
+    if let block, NSIntersectionRange(sourceRange, range) == range {
+      self.sourceBlockID = block
+      self.range = NSRange(location: range.location - sourceRange.location, length: range.length)
+      self.renderedText = attributedText.attributedSubstring(from: sourceRange).string
+    } else {
+      self.sourceBlockID = sourceBlockID
+      self.range = range
+      self.renderedText = attributedText.string
+    }
     let selected = attributedText.attributedSubstring(from: range)
     var text = ""
     selected.enumerateAttributes(in: NSRange(location: 0, length: selected.length)) { attributes, range, _ in

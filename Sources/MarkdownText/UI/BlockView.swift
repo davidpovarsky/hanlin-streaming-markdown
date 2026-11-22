@@ -44,8 +44,8 @@ struct SingleBlockView: View {
         ParagraphView(contents: contents)
           .transition(.opacity)
           .accessibilityAddTraits(.isHeader)
-      case .paragraph(_, let contents):
-        ParagraphView(contents: contents, lineSpacing: 5)
+      case .paragraph(let id, let contents):
+        ParagraphView(contents: contents, lineSpacing: id.hasPrefix("hanlin-continuous:") ? nil : 5)
           .fixedSize(horizontal: false, vertical: true)
           .transition(.opacity)
       case .latex(_, let latexString):
