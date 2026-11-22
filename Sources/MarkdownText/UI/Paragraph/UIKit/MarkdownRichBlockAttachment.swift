@@ -38,30 +38,50 @@ final class MarkdownRichBlockAttachment: NSTextAttachment {
 /// Public TextKit 2 view attachment. SwiftUI retains the original rich block
 /// type/state; no raster snapshot or sibling selection surface is substituted.
 final class MarkdownRichBlockViewProvider: NSTextAttachmentViewProvider {
-  private weak var owner: ParagraphUIView?
   private let block: MarkdownRenderable
-  private var host: MarkdownRichBlockHostView?
-  private var lastSize = CGSize.zero
+  private let layoutCache = MarkdownRichBlockLayoutCache()
+  @MainActor private weak var owner: ParagraphUIView?
+  @MainActor private var host: MarkdownRichBlockHostView?
+  @MainActor private var invalidationScheduled = false
 
   required override init(textAttachment attachment: NSTextAttachment, parentView: UIView?,
                          textLayoutManager: NSTextLayoutManager?, location: any NSTextLocation) {
     let rich = attachment as? MarkdownRichBlockAttachment
     self.block = rich?.block ?? .thematicBreak(id: "unavailable")
-    self.owner = rich?.owner
     super.init(textAttachment: attachment, parentView: parentView,
       textLayoutManager: textLayoutManager, location: location)
-    tracksTextAttachmentViewBounds = true
-    owner?.registerAttachmentProvider(self)
+    if Thread.isMainThread {
+      MainActor.assumeIsolated { connectOwner() }
+    } else if layoutCache.requestSetup() {
+      enqueueMainUpdate()
+    }
   }
 
   override func loadView() {
+    if Thread.isMainThread {
+      MainActor.assumeIsolated { ensureHost() }
+    } else if layoutCache.requestSetup() {
+      enqueueMainUpdate()
+    }
+  }
+
+  @MainActor private func connectOwner() {
+    tracksTextAttachmentViewBounds = true
+    guard owner == nil, let currentOwner = (textAttachment as? MarkdownRichBlockAttachment)?.owner else { return }
+    owner = currentOwner
+    currentOwner.registerAttachmentProvider(self)
+  }
+
+  @MainActor private func ensureHost() {
+    connectOwner()
+    guard host == nil else { return }
     let host = MarkdownRichBlockHostView()
     self.host = host
     self.view = host
     refreshEnvironment()
   }
 
-  func refreshEnvironment() {
+  @MainActor func refreshEnvironment() {
     guard let host else { return }
     guard let environment = owner?.attachmentEnvironment else { host.clear(); return }
     // Updating the configuration of the same content view preserves the hosted
@@ -74,28 +94,108 @@ final class MarkdownRichBlockViewProvider: NSTextAttachmentViewProvider {
   override func attachmentBounds(for attributes: [NSAttributedString.Key: Any],
                                  location: any NSTextLocation, textContainer: NSTextContainer?,
                                  proposedLineFragment: CGRect, position: CGPoint) -> CGRect {
-    if host == nil { loadView() }
-    let proposedWidth = proposedLineFragment.width
-    let fallbackWidth = owner?.bounds.width ?? 1
-    let width = max(1, proposedWidth.isFinite && proposedWidth > 0 ? proposedWidth : fallbackWidth)
-    let size = host?.fittingSize(width: width) ?? CGSize(width: width, height: 1)
-    lastSize = size
-    // A block attachment fills its own paragraph's available line width.
-    // Keep its bottom on the baseline; TextKit supplies the paragraph spacing.
-    return CGRect(x: 0, y: 0, width: width, height: max(1, size.height.rounded(.up)))
+    let width = proposedLineFragment.width
+    if Thread.isMainThread {
+      return MainActor.assumeIsolated { measureOnMain(proposedWidth: width).bounds }
+    }
+    // TextKit's public provider callbacks have no main-thread contract. Never
+    // read a UIView here or block a layout worker waiting for the main queue.
+    let snapshot = layoutCache.bounds(proposedWidth: width)
+    if snapshot.needsHandoff { enqueueMainUpdate() }
+    return snapshot.bounds
   }
 
-  private func contentSizeChanged(_ size: CGSize) {
-    guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
-          abs(size.height - lastSize.height) > 0.5 || abs(size.width - lastSize.width) > 0.5 else { return }
-    lastSize = size
+  @MainActor private func measureOnMain(proposedWidth: CGFloat) -> (bounds: CGRect, changed: Bool) {
+    // loadView is a framework entry point, not a helper to invoke ourselves.
+    ensureHost()
+    let fallbackWidth = owner?.bounds.width ?? 1
+    let width = max(1, proposedWidth.isFinite && proposedWidth > 0 ? proposedWidth : fallbackWidth)
+    let measured = host?.fittingSize(width: width) ?? CGSize(width: width, height: 1)
+    let height = measured.height.isFinite ? max(1, measured.height.rounded(.up)) : 1
+    let size = CGSize(width: width, height: height)
+    let changed = layoutCache.store(size)
+    // A block attachment fills its own paragraph's available line width.
+    // Keep its bottom on the baseline; TextKit supplies the paragraph spacing.
+    return (CGRect(origin: .zero, size: size), changed)
+  }
+
+  private func enqueueMainUpdate() {
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      let width = self.layoutCache.beginHandoff()
+      let measurement = self.measureOnMain(proposedWidth: width ?? 0)
+      if measurement.changed { self.scheduleLayoutInvalidation() }
+    }
+  }
+
+  @MainActor private func contentSizeChanged(_ size: CGSize) {
+    guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return }
+    let measured = CGSize(width: size.width, height: max(1, size.height.rounded(.up)))
+    if layoutCache.store(measured) { scheduleLayoutInvalidation() }
+  }
+
+  @MainActor private func scheduleLayoutInvalidation() {
+    guard !invalidationScheduled else { return }
+    invalidationScheduled = true
     // Geometry changes arrive after SwiftUI layout. Defer invalidation to avoid
     // changing text layout recursively during an attachment's own measurement.
     Task { @MainActor [weak self] in
-      guard let self, self.owner?.window != nil else { return }
+      guard let self else { return }
+      self.invalidationScheduled = false
+      guard self.owner?.window != nil, self.owner?.attachmentEnvironment != nil else { return }
       self.textLayoutManager?.invalidateLayout(for: NSTextRange(location: self.location))
       self.owner?.attachmentSizeDidChange()
     }
+  }
+}
+
+/// The only state shared with a non-main TextKit measurement callback. No UI,
+/// framework layout object, closure, or actor reference is accessed under this lock.
+private final class MarkdownRichBlockLayoutCache {
+  private let lock = NSLock()
+  private var size = CGSize.zero
+  private var requestedWidth: CGFloat?
+  private var handoffPending = false
+
+  func requestSetup() -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !handoffPending else { return false }
+    handoffPending = true
+    return true
+  }
+
+  func bounds(proposedWidth: CGFloat) -> (bounds: CGRect, needsHandoff: Bool) {
+    lock.lock()
+    defer { lock.unlock() }
+    let width = max(1, proposedWidth.isFinite && proposedWidth > 0 ? proposedWidth : max(1, size.width))
+    let needsMeasurement = size.height <= 0 || abs(size.width - width) > 0.5
+    var needsHandoff = false
+    if needsMeasurement {
+      requestedWidth = width
+      if !handoffPending {
+        handoffPending = true
+        needsHandoff = true
+      }
+    }
+    return (CGRect(x: 0, y: 0, width: width, height: max(1, size.height)), needsHandoff)
+  }
+
+  func beginHandoff() -> CGFloat? {
+    lock.lock()
+    defer { lock.unlock() }
+    let width = requestedWidth
+    requestedWidth = nil
+    handoffPending = false
+    return width
+  }
+
+  @discardableResult func store(_ newSize: CGSize) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    let changed = abs(size.height - newSize.height) > 0.5 || abs(size.width - newSize.width) > 0.5
+    size = newSize
+    return changed
   }
 }
 
